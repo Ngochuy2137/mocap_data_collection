@@ -5,7 +5,9 @@
 Program description
     - Subscribes to a PoseStamped topic and records the trajectory of the object.
     - Start recording when the user presses ENTER 
-    -   Interpolate velocity.
+    -   Interpolate velocity based on central difference method, not backward/forward difference method.
+    -       I interpolate velocities manually instead of using np.gradient() because np.gradient() auto interpolates if time steps are not equal.
+    - Swap y and z if necessary.
     - Stop when the object reaches a certain height.
     - Log a warning if the message frequency is lower than a certain threshold.
     - Save the recorded trajectories to a file named 'trajectories.npz' when the user stops the program.
@@ -38,7 +40,7 @@ MIN_HEIGHT_THRESHOLD = 0.2  # Trajectory end height threshold
 MIN_FREQ_THRESHOLD = 100  # Minimum message frequency (Hz)
 MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee1_pose'
 SWAP_YZ = True
-
+DECIMAL_NUM = 5
 # Global vars
 trajectories = []
 current_trajectory = []
@@ -73,7 +75,9 @@ def pose_callback(msg:PoseStamped):
             # Save the current position to the current trajectory
             new_point = np.array([x, y, z, current_timestamp])
             current_trajectory.append(new_point)
-            new_point_prt = [round(i, 3) for i in new_point]
+
+            # print out
+            new_point_prt = [round(i, DECIMAL_NUM) for i in new_point]
             print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_count=', low_freq_count)
 
             # Check end condition of the current trajectory
@@ -82,21 +86,36 @@ def pose_callback(msg:PoseStamped):
                 process_trajectory()
                 recording = False
 
+def vel_interpolation(x_arr, t_arr):
+    vel = []
+    for i in range(len(x_arr)):
+        if i == 0:
+            # Forward difference
+            vel_i = (x_arr[i + 1] - x_arr[i]) / (t_arr[i + 1] - t_arr[i])
+        elif i == len(x_arr) - 1:
+            # Backward difference
+            vel_i = (x_arr[i] - x_arr[i - 1]) / (t_arr[i] - t_arr[i - 1])
+        else:
+            # Central difference
+            vel_i = (x_arr[i + 1] - x_arr[i - 1]) / (t_arr[i + 1] - t_arr[i - 1])
+            vel.append(vel_i)
+    vel = np.array(vel)
+    return vel
+
 def process_trajectory():
     global trajectories, current_trajectory, low_freq_count
     # Interpolate vx, vy, vz from x, y, z
     data_points_np = np.array(current_trajectory)
     if len(data_points_np) > 1:
-        vx = np.gradient(data_points_np[:, 0], data_points_np[:, 3])  # vx = dx/dt
-        vy = np.gradient(data_points_np[:, 1], data_points_np[:, 3])  # vy = dy/dt
-        vz = np.gradient(data_points_np[:, 2], data_points_np[:, 3])  # vz = dz/dt
-        data_points = np.column_stack((data_points_np[:, :3], vx, vy, vz, data_points_np[:, 3]))
+        vx = vel_interpolation(data_points_np[:, 0], data_points_np[:, 3])  # vx = dx/dt
+        vy = vel_interpolation(data_points_np[:, 1], data_points_np[:, 3])  # vy = dy/dt
+        vz = vel_interpolation(data_points_np[:, 2], data_points_np[:, 3])  # vz = dz/dt
+        extened_data_points = np.column_stack((data_points_np[:, :3], vx, vy, vz, data_points_np[:, 3]))
+        # extened_data_points = np.round(extened_data_points, DECIMAL_NUM)
         trajectory_data = {
-            'points': data_points,
+            'points': extened_data_points,
             'low_freq_num': low_freq_count
         }
-
-
         trajectories.append(trajectory_data)
 
         # Save all trajectories to file after each completed trajectory
@@ -125,7 +144,8 @@ def save_trajectories_to_file():
     file_path = os.path.join(trajectories_dir, file_name)
     
     # Save trajectories using numpy npz format
-    np.savez(file_path, *trajectories)  # Save each trajectory as a key-value array
+    trajectory_dict = {'trajectories': trajectories}
+    np.savez(file_path, **trajectory_dict)  # Save each trajectory as a key-value array
     rospy.loginfo("All atrajectories has been saved to file " + file_name)
 
 def check_user_input():
