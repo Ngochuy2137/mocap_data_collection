@@ -14,13 +14,25 @@ Program description
     -     Data format:  [  
                             [   
                                 points: [
-                                            [x, y, z, vx, vy, vz, timestamp], 
+                                            [x, y, z, vx, vy, vz, 0, 0, 9.81], 
                                             ...
                                         ], 
+                                time_stamps: [double],
                                 low_freq_num: int
                             ], 
                             ...
                         ]
+    - Some other features:
+        - Avoiding messages missing:
+            - Proper ENTER checking:
+                - To get ENTER input from user, I create a thread for this task. However, when ENTER checking thread run continuously, along with main thread, 
+                it might lock the main thread and cause missing messages (check self.recording_lock variable)
+                - Therefore, to avoid missing message, I use threading.Event to activate/deactivate thread that check user ENTER input.
+                - The ENTER checking thread is activated only after finishing a new trajectory or when starting the program.
+            - Message queueing problem avoidance:
+                - When waiting for user to press ENTER, the program should not queue messages. Therefore, check the lock before processing messages (check self.recording_lock.acquire(blocking=False)):
+                    - If self.recording_lock.acquire(blocking=False), no locking, process the message.
+                    - If not, skip the message.
 
 Maintainer: Huynn
 --------------------------------------------------------------------------------------------------------
@@ -39,6 +51,7 @@ class RoCatDataCollector:
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
         self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback)
+        self.mocap_object_topic = mocap_object_topic
 
         self.min_height_threshold = min_height_threshold
         self.min_freq_threshold = min_freq_threshold
@@ -47,17 +60,36 @@ class RoCatDataCollector:
         self.reset()
 
         # Start user input thread
+        self.enter_event = threading.Event()
+        self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
         self.recording_lock = threading.Lock()
         self.user_input_thread = threading.Thread(target=self.check_user_input)
         self.user_input_thread.daemon = True
         self.user_input_thread.start()
 
-
     def pose_callback(self, msg:PoseStamped):
-        with self.recording_lock:
+        # get x, y, z
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+        z = msg.pose.position.z
+        # Swap y and z
+        if self.swap_yz:
+            y, z = z, y
+        self.current_position = [x, y, z]
+        current_timestamp = msg.header.stamp.to_sec()
+
+        # If the lock cannot be obtained, skip the callback
+        if not self.recording_lock.acquire(blocking=False):
+            # rospy.loginfo("Skipping message due to lock being held.")
+            return
+
+        '''
+        try...finally ensures that the lock will always be released, no matter what happens during processing inside the try block. 
+        Without finally, when an error (or exception) occurs, the lock can be held forever, and no other thread can obtain the lock.
+        '''
+        try:
             if self.recording:
                 # Get the current time and calculate the message frequency
-                current_timestamp = msg.header.stamp.to_sec()
                 if len(self.current_trajectory) > 0:
                     last_timestamp = self.current_trajectory[-1][3]
                     time_diff = (current_timestamp - last_timestamp)
@@ -67,16 +99,8 @@ class RoCatDataCollector:
                         rospy.logwarn("Current message frequency is too low: " + str(freq) + " Hz")
                         self.low_freq_count += 1
                 
-                # get x, y, z
-                x = msg.pose.position.x
-                y = msg.pose.position.y
-                z = msg.pose.position.z
-                # Swap y and z
-                if self.swap_yz:
-                    y, z = z, y
-                
                 # Save the current position to the current trajectory
-                new_point = np.array([x, y, z, current_timestamp])
+                new_point = self.current_position + [current_timestamp]
                 self.current_trajectory.append(new_point)
 
                 # print out
@@ -84,14 +108,19 @@ class RoCatDataCollector:
                 print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_count=', self.low_freq_count)
 
                 # Check end condition of the current trajectory
-                if z < self.min_height_threshold:
+                if self.current_position[2] < self.min_height_threshold:
                     rospy.loginfo("Trajectory ended with " + str(len(self.current_trajectory)) + " points !")
                     if self.process_trajectory():
                         # Save all trajectories to file after each new proper trajectory
                         self.save_trajectories_to_file()
+                    self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
+        finally:
+            # Giải phóng lock sau khi xử lý xong
+            self.recording_lock.release()
                     
     def reset(self,):
+        self.current_position = [0, 0, 0]
         self.current_trajectory = []
         self.low_freq_count = 0
         self.recording = False
@@ -165,12 +194,14 @@ class RoCatDataCollector:
 
     def check_user_input(self,):
         while not rospy.is_shutdown():
+            self.enter_event.wait()
             with self.recording_lock:
                 if not self.recording:
                     print('\n\n------------------------- [', len(self.collected_data), '] -------------------------')
                     input("Press ENTER to start new trajectory collection ...")
                     self.recording = True
                     rospy.loginfo("Collecting ...\n")
+                    self.enter_event.clear()  # Sau khi nhấn ENTER, dừng chờ đến lần sau
 
 
 if __name__ == '__main__':
