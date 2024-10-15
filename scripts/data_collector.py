@@ -36,10 +36,10 @@ import os
 
 # np.set_printoptions(precision=3)
 # Thresholds
-MIN_HEIGHT_THRESHOLD = 0.2  # Trajectory end height threshold
+MIN_HEIGHT_THRESHOLD = 0.1  # Trajectory end height threshold
 MIN_FREQ_THRESHOLD = 100  # Minimum message frequency (Hz)
 MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee1_pose'
-SWAP_YZ = True
+SWAP_YZ = False
 DECIMAL_NUM = 5
 # Global vars
 trajectories = []
@@ -98,7 +98,7 @@ def vel_interpolation(x_arr, t_arr):
         else:
             # Central difference
             vel_i = (x_arr[i + 1] - x_arr[i - 1]) / (t_arr[i + 1] - t_arr[i - 1])
-            vel.append(vel_i)
+        vel.append(vel_i)
     vel = np.array(vel)
     return vel
 
@@ -110,10 +110,21 @@ def process_trajectory():
         vx = vel_interpolation(data_points_np[:, 0], data_points_np[:, 3])  # vx = dx/dt
         vy = vel_interpolation(data_points_np[:, 1], data_points_np[:, 3])  # vy = dy/dt
         vz = vel_interpolation(data_points_np[:, 2], data_points_np[:, 3])  # vz = dz/dt
-        extened_data_points = np.column_stack((data_points_np[:, :3], vx, vy, vz, data_points_np[:, 3]))
+        zeros = np.zeros_like(vx)
+        gravity = np.full_like(vx, 9.81)
+
+        print('\n-----------------')
+        print('data_points_np[:, :3] shape: ', data_points_np[:, :3].shape)
+        print('vx shape: ', vx.shape)
+        print('vy shape: ', vy.shape)
+        print('vz shape: ', vz.shape)
+        print('zeros shape: ', zeros.shape)
+        print('gravity shape: ', gravity.shape)
+        extened_data_points = np.column_stack((data_points_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
         # extened_data_points = np.round(extened_data_points, DECIMAL_NUM)
         trajectory_data = {
             'points': extened_data_points,
+            'time_stamps': data_points_np[:, 3],
             'low_freq_num': low_freq_count
         }
         trajectories.append(trajectory_data)
