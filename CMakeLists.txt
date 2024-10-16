@@ -162,6 +162,7 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/data_collector.py
   scripts/data_collector_node.py
+  scripts/check_frq.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
