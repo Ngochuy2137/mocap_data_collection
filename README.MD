@@ -88,7 +88,7 @@ rosrun mocap_data_collection data_collector_node.py
 - Throw the frisbee
     - Notes:
         - The program automatically starts collecting data when the frisbee flies and cross the line
-        - The collection process or a trajectory is stopped automatically when the frisbee’s height is below STOP_TRAJ_Z_THRESHOLD value in the code (default: 10cm)
+        - The collection process of a trajectory is stopped automatically when the frisbee’s height is below STOP_TRAJ_Z_THRESHOLD value in the code (default: 10cm)
         - The program save the data after finishing data collection for a new trajectory
 - Go pick up the frisbee and restart the collection process
 
