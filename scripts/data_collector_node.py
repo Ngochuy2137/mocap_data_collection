@@ -33,7 +33,9 @@ Program description
                 - When waiting for user to press ENTER, the program should not queue messages. Therefore, check the lock before processing messages (check self.recording_lock.acquire(blocking=False)):
                     - If self.recording_lock.acquire(blocking=False), no locking, process the message.
                     - If not, skip the message.
-            - We can know how many messages are missed by checking topic field /topic/header/seq (read self.last_msg_id variable)
+            - We can know how many messages are missed by checking topic field /topic/header/seq (read self.last_msg_id variable) (Level 1)
+                - Message missing check -level 2: Before process a new trajectory, we also check if data is uncontinuous (check self.is_uncontinuous_data(msg_ids))
+                    - If data is uncontinuous, that means some messages are missing -> Check /topic/header/seq field
 
 Maintainer: Huynn
 --------------------------------------------------------------------------------------------------------
@@ -104,17 +106,17 @@ class RoCatDataCollector:
         try:
             if self.recording:                
                 # Save the current position to the current trajectory
-                new_point = self.current_position + [current_timestamp]
+                new_point = self.current_position + [current_timestamp] + [current_msg_id]
                 self.current_trajectory.append(new_point)
 
                 # print out
                 new_point_prt = [round(i, self.decima_prt_num) for i in new_point]
-                # print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_count=', self.low_freq_count)
+                print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_count=', self.low_freq_count)
 
                 # Check end condition of the current trajectory
                 if self.current_position[2] < self.min_height_threshold:
                     rospy.loginfo("Trajectory ended with " + str(len(self.current_trajectory)) + " points !")
-                    if self.process_trajectory():
+                    if self.process_trajectory(self.current_trajectory):
                         # Save all trajectories to file after each new proper trajectory
                         self.save_trajectories_to_file()
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
@@ -179,35 +181,54 @@ class RoCatDataCollector:
                 self.last_timestamp = current_timestamp
                 return False
             freq = round(freq, 3)
-            rospy.logwarn("Current message frequency is too low: " + str(freq) + " Hz, real freq: " + str(real_freq) + " Hz")
+            rospy.logwarn("Current message frequency is too low: " + str(freq) + " Hz")
             self.low_freq_count += 1
             self.last_timestamp = current_timestamp
             return True
-        
+    
+    '''
+    Check if data is uncontinuous
+    return:
+        True if data is uncontinuous
+        False if data is continuous
+    '''
+    def is_uncontinuous_data(self, msg_ids):
+        # check msg_ids list is continuous or not
+        for i in range(1, len(msg_ids)):
+            if msg_ids[i] - msg_ids[i - 1] != 1:
+                return True
+        return False
 
     # Process the current trajectory
-    def process_trajectory(self):
+    def process_trajectory(self, new_trajectory):
         # Interpolate vx, vy, vz from x, y, z
-        data_points_np = np.array(self.current_trajectory)
-        if len(data_points_np) > 1:
-            vx = self.vel_interpolation(data_points_np[:, 0], data_points_np[:, 3])  # vx = dx/dt
-            vy = self.vel_interpolation(data_points_np[:, 1], data_points_np[:, 3])  # vy = dy/dt
-            vz = self.vel_interpolation(data_points_np[:, 2], data_points_np[:, 3])  # vz = dz/dt
+        new_traj_np = np.array(new_trajectory)
+        if len(new_traj_np) > 1:
+            msg_ids = new_traj_np[:, 4]
+            if self.is_uncontinuous_data(msg_ids):
+                rospy.logerr("The data is not continuous, some messages from publisher might be missed")
+            
+            time_stamps = new_traj_np[:, 3]
+
+            vx = self.vel_interpolation(new_traj_np[:, 0], time_stamps)  # vx = dx/dt
+            vy = self.vel_interpolation(new_traj_np[:, 1], time_stamps)  # vy = dy/dt
+            vz = self.vel_interpolation(new_traj_np[:, 2], time_stamps)  # vz = dz/dt
             zeros = np.zeros_like(vx)
             gravity = np.full_like(vx, 9.81)
 
             print('\n-----------------')
-            print('data_points_np[:, :3] shape: ', data_points_np[:, :3].shape)
+            print('new_traj_np[:, :3] shape: ', new_traj_np[:, :3].shape)
             print('vx shape: ', vx.shape)
             print('vy shape: ', vy.shape)
             print('vz shape: ', vz.shape)
             print('zeros shape: ', zeros.shape)
             print('gravity shape: ', gravity.shape)
-            extened_data_points = np.column_stack((data_points_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
+            extened_data_points = np.column_stack((new_traj_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
             # extened_data_points = np.round(extened_data_points, DECIMAL_NUM)
             trajectory_data = {
                 'points': extened_data_points,
-                'time_stamps': data_points_np[:, 3],
+                'msg_ids': msg_ids,
+                'time_stamps': time_stamps,
                 'low_freq_num': self.low_freq_count
             }
             self.collected_data.append(trajectory_data)
@@ -268,7 +289,7 @@ if __name__ == '__main__':
     # Thresholds
     MIN_HEIGHT_THRESHOLD = 0.1  # Trajectory end height threshold
     MIN_FREQ_THRESHOLD = 100  # Minimum message frequency (Hz)
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee1_pose'
+    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/dog_pose'
     SWAP_YZ = False
     DECIMAL_NUM = 5
 
