@@ -41,12 +41,28 @@ if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
     # Create a path to the directory ../trajectories
-    file_path = os.path.join(parent_dir, 'data', 'trajectories_14-10-2024_03-29-23.npz')
+    file_path = os.path.join(parent_dir, 'data', 'trajectories_15-10-2024_18-35-03.npz')
 
     data_reader = RoCatDataReader(file_path)
-    print(data_reader.trajectories.files)
+    # print(data_reader.trajectories.files)
+    # input()
     # print(data_reader.trajectories['trajectories'])
-    for p in data_reader.trajectories['trajectories'][0]['points']:
+    for i in range(data_reader.trajectories['trajectories'][0]['points'].shape[0]):
+        point = data_reader.trajectories['trajectories'][0]['points'][i]
+        time = data_reader.trajectories['trajectories'][0]['time_stamps'][i]
+        
+        p_str = np.array2string(point, formatter={'float_kind':lambda x: "%.5f" % x})
+        print(p_str + ', ' + str(time))
+    input()
+
+    for p in data_reader.trajectories['trajectories'][0]['time_stamps']:
         p_str = np.array2string(p, formatter={'float_kind':lambda x: "%.5f" % x})
         print(p_str)
+    input()
+
+    for p in data_reader.trajectories['trajectories'][0]['low_freq_num']:
+        p_str = np.array2string(p, formatter={'float_kind':lambda x: "%.5f" % x})
+        print(p_str)
+
+
     # data_reader.plot_trajectories()
