@@ -33,6 +33,7 @@ Program description
                 - When waiting for user to press ENTER, the program should not queue messages. Therefore, check the lock before processing messages (check self.recording_lock.acquire(blocking=False)):
                     - If self.recording_lock.acquire(blocking=False), no locking, process the message.
                     - If not, skip the message.
+            - We can know how many messages are missed by checking topic field /topic/header/seq (read self.last_msg_id variable)
 
 Maintainer: Huynn
 --------------------------------------------------------------------------------------------------------
@@ -50,7 +51,7 @@ class RoCatDataCollector:
     def __init__(self, mocap_object_topic, min_height_threshold, min_freq_threshold, swap_yz):
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
-        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback)
+        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=1000)
         self.mocap_object_topic = mocap_object_topic
 
         self.min_height_threshold = min_height_threshold
@@ -67,7 +68,11 @@ class RoCatDataCollector:
         self.user_input_thread.daemon = True
         self.user_input_thread.start()
 
+        self.real_last_msg_time = 0 # for debug
+
     def pose_callback(self, msg:PoseStamped):
+        # measure callback function time
+        start_time = time.time()
         # get x, y, z
         x = msg.pose.position.x
         y = msg.pose.position.y
@@ -77,35 +82,34 @@ class RoCatDataCollector:
             y, z = z, y
         self.current_position = [x, y, z]
         current_timestamp = msg.header.stamp.to_sec()
+        current_msg_id = msg.header.seq
 
-        # If the lock cannot be obtained, skip the callback
+        # check if messages are missing
+        if self.is_message_missing(current_msg_id):
+            # end program
+            rospy.logerr("The program will stop now.")
+            return
+        
+        # check if messages frequency is too low
+        self.is_message_low_frequency(current_timestamp)
+
+        # Check if the lock is released (if user pressed ENTER), else: skip the callback
         if not self.recording_lock.acquire(blocking=False):
             # rospy.loginfo("Skipping message due to lock being held.")
             return
-
         '''
         try...finally ensures that the lock will always be released, no matter what happens during processing inside the try block. 
         Without finally, when an error (or exception) occurs, the lock can be held forever, and no other thread can obtain the lock.
         '''
         try:
-            if self.recording:
-                # Get the current time and calculate the message frequency
-                if len(self.current_trajectory) > 0:
-                    last_timestamp = self.current_trajectory[-1][3]
-                    time_diff = (current_timestamp - last_timestamp)
-                    freq = 1.0 / time_diff
-                    if freq < self.min_freq_threshold:
-                        freq = round(freq, 2)
-                        rospy.logwarn("Current message frequency is too low: " + str(freq) + " Hz")
-                        self.low_freq_count += 1
-                
+            if self.recording:                
                 # Save the current position to the current trajectory
                 new_point = self.current_position + [current_timestamp]
                 self.current_trajectory.append(new_point)
 
                 # print out
                 new_point_prt = [round(i, self.decima_prt_num) for i in new_point]
-                print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_count=', self.low_freq_count)
+                # print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_count=', self.low_freq_count)
 
                 # Check end condition of the current trajectory
                 if self.current_position[2] < self.min_height_threshold:
@@ -115,8 +119,15 @@ class RoCatDataCollector:
                         self.save_trajectories_to_file()
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
+                
+                # measure callback function time
+                end_time = time.time()
+                callback_freq = 1.0 / (end_time - start_time)
+                if callback_freq < self.min_freq_threshold:
+                    rospy.logerr("     Callback freq: " + str(round(callback_freq, 2)) + " Hz")
+
         finally:
-            # Giải phóng lock sau khi xử lý xong
+            # Release the lock
             self.recording_lock.release()
                     
     def reset(self,):
@@ -124,6 +135,54 @@ class RoCatDataCollector:
         self.current_trajectory = []
         self.low_freq_count = 0
         self.recording = False
+        self.last_msg_id = 0
+        self.last_timestamp = 0.0
+    
+    '''
+    Check if messages are missing
+    return:
+        False: no message is missing
+        True: messages are missing
+    '''
+    def is_message_missing(self, current_msg_id):
+        if self.last_msg_id == 0:
+            self.last_msg_id = current_msg_id
+            return False
+        if self.last_msg_id != 0:
+            if current_msg_id - self.last_msg_id == 1:
+                self.last_msg_id = current_msg_id
+                return False
+            
+            # list all missing messages
+            miss_mess = [i for i in range(self.last_msg_id + 1, current_msg_id)]
+            rospy.logerr("[------------------------------------------------- ERROR -------------------------------------------------]")
+            rospy.logerr("      Some messages missing: " + str(miss_mess))
+            rospy.logerr("      Please check the connection between the mocap system and the computer which runs this subscriber.")
+            rospy.logerr("[---------------------------------------------------------------------------------------------------------]")
+            self.last_msg_id = current_msg_id
+            return True
+    
+    '''
+    Check if messages frequency is too low
+    return:
+        False if frequency is fast enough
+        True if frequency is too low
+    '''
+    def is_message_low_frequency(self, current_timestamp):
+        if self.last_timestamp == 0:
+            self.last_timestamp = current_timestamp
+            return False
+        if self.last_timestamp != 0:
+            time_diff = (current_timestamp - self.last_timestamp)
+            freq = 1.0 / time_diff
+            if freq >= self.min_freq_threshold:
+                self.last_timestamp = current_timestamp
+                return False
+            freq = round(freq, 3)
+            rospy.logwarn("Current message frequency is too low: " + str(freq) + " Hz, real freq: " + str(real_freq) + " Hz")
+            self.low_freq_count += 1
+            self.last_timestamp = current_timestamp
+            return True
         
 
     # Process the current trajectory
