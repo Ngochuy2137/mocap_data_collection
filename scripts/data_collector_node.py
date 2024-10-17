@@ -143,7 +143,11 @@ class RoCatDataCollector:
                     rospy.loginfo("Trajectory ended with " + str(len(self.current_trajectory)) + " points !")
                     if self.process_trajectory(self.current_trajectory):
                         # Save all trajectories to file after each new proper trajectory
-                        self.save_trajectories_to_file()
+                        enable_saving = input("Do you want to save the current trajectory ? (y/n): ")
+                        if enable_saving == 'y':
+                            self.save_trajectories_to_file()
+                        else:
+                            rospy.logwarn("The current trajectory is not saved !")
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                 
