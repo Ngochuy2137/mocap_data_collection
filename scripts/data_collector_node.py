@@ -61,7 +61,7 @@ class RoCatDataCollector:
         
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
-        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=1000)
+        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=100)
         self.mocap_object_topic = mocap_object_topic
 
         self.stop_traj_z_threshold, = stop_traj_z_threshold,
@@ -103,8 +103,6 @@ class RoCatDataCollector:
         current_msg_id = msg.header.seq
 
         # check if messages are missing
-        print('     Last msg id: ', self.last_msg_id)
-        print('     Current msg id: ', current_msg_id)
         if self.is_message_missing(current_msg_id):
             # end program
             rospy.logerr("The program will stop now.")
