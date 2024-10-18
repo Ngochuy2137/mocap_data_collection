@@ -140,14 +140,14 @@ class RoCatDataCollector:
 
                 # Check end condition of the current trajectory
                 if self.current_position[2] < self.stop_traj_z_threshold:
-                    rospy.loginfo("Trajectory ended with " + str(len(self.current_trajectory)) + " points !")
+                    # rospy.loginfo("Trajectory ended with " + str(len(self.current_trajectory)) + " points !")
                     if self.process_trajectory(self.current_trajectory):
                         # Save all trajectories to file after each new proper trajectory
-                        enable_saving = input("Do you want to save the current trajectory ? (y/n): ")
+                        enable_saving = input("     Do you want to save the current trajectory ? (y/n): ")
                         if enable_saving == 'y':
                             self.save_trajectories_to_file()
                         else:
-                            rospy.logwarn("The current trajectory is not saved !")
+                            rospy.logwarn("     The current trajectory is not saved !")
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                 
@@ -262,13 +262,14 @@ class RoCatDataCollector:
             zeros = np.zeros_like(vx)
             gravity = np.full_like(vx, 9.81)
 
-            print('\n-----------------')
-            print('new_traj_np[:, :3] shape: ', new_traj_np[:, :3].shape)
-            print('vx shape: ', vx.shape)
-            print('vy shape: ', vy.shape)
-            print('vz shape: ', vz.shape)
-            print('zeros shape: ', zeros.shape)
-            print('gravity shape: ', gravity.shape)
+            print('\n     ------------------------------------------------')
+            # print('new_traj_np[:, :3] shape: ', new_traj_np[:, :3].shape)
+            # print('vx shape: ', vx.shape)
+            # print('vy shape: ', vy.shape)
+            # print('vz shape: ', vz.shape)
+            # print('zeros shape: ', zeros.shape)
+            # print('gravity shape: ', gravity.shape)
+            print('     --------- New trajectory with ' + str(len(new_traj_np)) + ' points ---------')
             extened_data_points = np.column_stack((new_traj_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
             trajectory_data = {
                 'points': extened_data_points,
@@ -287,13 +288,22 @@ class RoCatDataCollector:
         for i in range(len(x_arr)):
             if i == 0:
                 # Forward difference
-                vel_i = (x_arr[i + 1] - x_arr[i]) / (t_arr[i + 1] - t_arr[i])
+                prev_t_id = i
+                next_t_id = i+1
             elif i == len(x_arr) - 1:
                 # Backward difference
-                vel_i = (x_arr[i] - x_arr[i - 1]) / (t_arr[i] - t_arr[i - 1])
+                prev_t_id = i-1
+                next_t_id = i
             else:
                 # Central difference
-                vel_i = (x_arr[i + 1] - x_arr[i - 1]) / (t_arr[i + 1] - t_arr[i - 1])
+                prev_t_id = i-1
+                next_t_id = i+1
+            
+            #check 0 division
+            if t_arr[next_t_id] - t_arr[prev_t_id] == 0:
+                vel_i = 0
+            else:
+                vel_i = (x_arr[next_t_id] - x_arr[prev_t_id]) / (t_arr[next_t_id] - t_arr[prev_t_id])
             vel.append(vel_i)
         vel = np.array(vel)
         return vel
