@@ -57,7 +57,8 @@ class RoCatDataCollector:
                 low_freq_l2_num_threshold, 
                 low_freq_x_start_check, 
                 low_freq_y_start_check, 
-                low_freq_z_start_check):
+                low_freq_z_start_check,
+                gap_threshold):
         
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
@@ -73,6 +74,7 @@ class RoCatDataCollector:
         self.low_freq_x_start_check = low_freq_x_start_check
         self.low_freq_y_start_check = low_freq_y_start_check
         self.low_freq_z_start_check = low_freq_z_start_check
+        self.gap_threshold = gap_threshold
 
         self.swap_yz = swap_yz
         self.collected_data = []
@@ -254,6 +256,23 @@ class RoCatDataCollector:
             if msg_ids[i] - msg_ids[i - 1] != 1:
                 return True
         return False
+    
+    '''
+    Check if a trajectory is split into multiple segments in case the mocap cannot track the object
+    If the distance between 2 consecutive points is greater than a certain distance, the trajectory is considered uncontinuous
+    return:
+        True if data is uncontinuous
+        False if data is continuous
+    '''
+    def is_uncontinuous_trajectory(self, msg_ids):
+        # calculate distance between 2 consecutive points
+        for i in range(1, len(msg_ids)):
+            next_p = np.array(self.current_trajectory[i][:3], dtype=float)
+            prev_p = np.array(self.current_trajectory[i - 1][:3], dtype=float)
+            if np.linalg.norm(next_p - prev_p) > self.gap_threshold:
+                return True
+        return False
+
 
     # Process the current trajectory
     def process_trajectory(self, new_trajectory):
@@ -263,6 +282,11 @@ class RoCatDataCollector:
             msg_ids = new_traj_np[:, 4]
             if self.is_missing_message_trajectory(msg_ids):
                 rospy.logerr("The data is not continuous, some messages from publisher might be missed")
+                return False
+            
+            if self.is_uncontinuous_trajectory(msg_ids):
+                rospy.logerr("The data is uncontinuous, some messages from publisher might be missed")
+                return False
             
             time_stamps = new_traj_np[:, 3]
 
@@ -366,6 +390,7 @@ if __name__ == '__main__':
         'low_freq_z_start_check': 0.1      # Start to check when z > low_freq_z_start_check
     }
     SWAP_YZ = True
+    GAP_THRESHOLD = 0.05  # Gap threshold to check if the trajectory is uncontinuous
 
     collector = RoCatDataCollector(
         MOCAP_OBJECT_TOPIC, 
@@ -376,7 +401,8 @@ if __name__ == '__main__':
         LOW_FREQ_L2_NUM_THRESHOLD,
         low_freq_check_conditions['low_freq_x_start_check'], 
         low_freq_check_conditions['low_freq_y_start_check'], 
-        low_freq_check_conditions['low_freq_z_start_check']
+        low_freq_check_conditions['low_freq_z_start_check'],
+        GAP_THRESHOLD
     )
     try:
         rospy.spin()
