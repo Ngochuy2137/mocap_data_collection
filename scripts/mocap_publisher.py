@@ -91,6 +91,7 @@ class NatNetClient:
         self.__natNetStreamVersion = (3,0,0,0)
 
         rigid_body_list = ["frisbee1"]
+        self.seq_dict = {name: 0 for name in rigid_body_list}
         
         print("ROS node initializing ...")
         self.pub_list = [
@@ -167,6 +168,11 @@ class NatNetClient:
         rigid_posestamped.header.stamp = rospy.Time.now()
         # rigid_posestamped.header.frame_id = "trackingValidFlag:" + ("True" if trackingValidFlag else "False")
         rigid_posestamped.header.frame_id = "world"
+
+        # # Manually set seq for message
+        # rigid_body_name = self.pub_list[id - 1].name[18:-5]  # Get the rigid body name from the topic
+        # self.seq_dict[rigid_body_name] += 1  # Increment the seq for this rigid body
+        # rigid_posestamped.header.seq = self.seq_dict[rigid_body_name]
 
         self.pub_list[id-1].publish(rigid_posestamped)
 
