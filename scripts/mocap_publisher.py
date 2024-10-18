@@ -95,7 +95,7 @@ class NatNetClient:
         
         print("ROS node initializing ...")
         self.pub_list = [
-            rospy.Publisher('mocap_pose_topic/{0}_pose'.format(rigid_body_list[i]), PoseStamped, queue_size=1)
+            rospy.Publisher('mocap_pose_topic/{0}_pose'.format(rigid_body_list[i]), PoseStamped, queue_size=2)
             for i in range(len(rigid_body_list))
         ]
         rospy.init_node('mocap_pose_node_pub', anonymous=True)
