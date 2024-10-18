@@ -103,7 +103,7 @@ class RoCatDataCollector:
         current_msg_id = msg.header.seq
 
         # check if messages are missing
-        if self.is_message_missing(current_msg_id):
+        if self.is_message_missing_signal(current_msg_id):
             rospy.logwarn("Becareful !")
             return
 
@@ -121,7 +121,7 @@ class RoCatDataCollector:
                                 self.current_position[1] > self.low_freq_y_start_check)
             if enable_recording:    
                 # check if messages are missing
-                if self.is_message_missing(current_msg_id):
+                if self.is_message_missing_signal(current_msg_id):
                     # end program
                     rospy.logerr("Reject the current trajectory ! Please recollect the trajectory !")
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
@@ -130,7 +130,7 @@ class RoCatDataCollector:
                     return
         
                 # check if messages frequency is too low
-                low_freq_level = self.is_message_low_frequency(current_timestamp, self.current_position)
+                low_freq_level = self.is_message_low_frequency_signal(current_timestamp, self.current_position)
                 if low_freq_level == 2:
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
@@ -183,7 +183,7 @@ class RoCatDataCollector:
         False: no message is missing
         True: messages are missing
     '''
-    def is_message_missing(self, current_msg_id):
+    def is_message_missing_signal(self, current_msg_id):
         if self.last_msg_id == 0:
             self.last_msg_id = current_msg_id
             return False
@@ -211,7 +211,7 @@ class RoCatDataCollector:
         1 if frequency is in range of low_freq_level1_threshold and low_freq_level2_threshold
         2 if frequency is lower than low_freq_level2_threshold
     '''
-    def is_message_low_frequency(self, current_timestamp, current_position):
+    def is_message_low_frequency_signal(self, current_timestamp, current_position):
         enable_low_freq_check = (self.last_timestamp != 0 and
                                  current_position[0] > self.low_freq_x_start_check and
                                  current_position[1] > self.low_freq_y_start_check and
@@ -243,12 +243,12 @@ class RoCatDataCollector:
             return 1
     
     '''
-    Check if data is uncontinuous
+    Check if data missing after collecting a completed trajectory
     return:
-        True if data is uncontinuous
+        True if data missing
         False if data is continuous
     '''
-    def is_uncontinuous_data(self, msg_ids):
+    def is_missing_message_trajectory(self, msg_ids):
         # check msg_ids list is continuous or not
         for i in range(1, len(msg_ids)):
             if msg_ids[i] - msg_ids[i - 1] != 1:
@@ -261,7 +261,7 @@ class RoCatDataCollector:
         new_traj_np = np.array(new_trajectory)
         if len(new_traj_np) > 1:
             msg_ids = new_traj_np[:, 4]
-            if self.is_uncontinuous_data(msg_ids):
+            if self.is_missing_message_trajectory(msg_ids):
                 rospy.logerr("The data is not continuous, some messages from publisher might be missed")
             
             time_stamps = new_traj_np[:, 3]
