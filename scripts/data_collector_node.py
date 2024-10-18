@@ -150,16 +150,16 @@ class RoCatDataCollector:
                             rospy.logwarn("     The current trajectory is not saved !")
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
-                
-                # measure callback function time
-                end_time = time.time()
-                callback_freq = 1.0 / (end_time - start_time)
-                if callback_freq < self.low_freq_level2_threshold:
-                    rospy.logerr("     Callback freq: " + str(round(callback_freq, 2)) + " Hz")
 
         finally:
             # Release the lock
             self.recording_lock.release()
+
+        # measure callback function time
+        end_time = time.time()
+        callback_freq = 1.0 / (end_time - start_time)
+        if callback_freq < self.low_freq_level2_threshold+30:
+            rospy.logerr("     Callback freq is low: " + str(round(callback_freq, 2)) + " Hz")
                     
     def reset(self,):
         self.current_position = [0, 0, 0]
