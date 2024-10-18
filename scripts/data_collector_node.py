@@ -104,9 +104,7 @@ class RoCatDataCollector:
 
         # check if messages are missing
         if self.is_message_missing(current_msg_id):
-            # end program
-            rospy.logerr("The program will stop now.")
-            rospy.signal_shutdown("Node shutting down")
+            rospy.logwarn("Becareful !")
             return
 
         # Check if the lock is released (if user pressed ENTER), else: skip the callback
@@ -122,6 +120,15 @@ class RoCatDataCollector:
                                 self.current_position[0] > self.low_freq_x_start_check and
                                 self.current_position[1] > self.low_freq_y_start_check)
             if enable_recording:    
+                # check if messages are missing
+                if self.is_message_missing(current_msg_id):
+                    # end program
+                    rospy.logerr("Reject the current trajectory ! Please recollect the trajectory !")
+                    self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
+                    self.reset()
+                    # rospy.signal_shutdown("Node shutting down")
+                    return
+        
                 # check if messages frequency is too low
                 low_freq_level = self.is_message_low_frequency(current_timestamp, self.current_position)
                 if low_freq_level == 2:
@@ -180,20 +187,23 @@ class RoCatDataCollector:
         if self.last_msg_id == 0:
             self.last_msg_id = current_msg_id
             return False
-        if self.last_msg_id != 0:
-            if current_msg_id - self.last_msg_id == 1:
-                self.last_msg_id = current_msg_id
-                return False
-            
+
+        if current_msg_id - self.last_msg_id == 1:
+            self.last_msg_id = current_msg_id
+            return False
+        elif current_msg_id - self.last_msg_id > 1:
             # list all missing messages
             miss_mess = [i for i in range(self.last_msg_id + 1, current_msg_id)]
-            rospy.logerr("[------------------------------------------------- ERROR -------------------------------------------------]")
+            rospy.logerr("\n[------------------------------------------------- ERROR -------------------------------------------------]")
             rospy.logerr("      Some messages missing: " + str(miss_mess))
             rospy.logerr("      Please check the connection between the mocap system and the computer which runs this subscriber.")
             rospy.logerr("[---------------------------------------------------------------------------------------------------------]")
             self.last_msg_id = current_msg_id
             return True
-    
+        
+        self.last_msg_id = current_msg_id
+        return False
+        
     '''
     Check if messages frequency is too low
     return:
