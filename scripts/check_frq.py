@@ -6,7 +6,7 @@ class MessageFrequencyChecker:
     def __init__(self):
         self.message_count = 0
         self.last_msg_time = 0
-        rospy.Subscriber('/mocap_pose_topic/frisbee2_pose', PoseStamped, self.callback, queue_size=50)
+        rospy.Subscriber('/mocap_pose_topic/frisbee1_pose', PoseStamped, self.callback, queue_size=50)
 
     def callback(self, msg:PoseStamped):
         current_time = msg.header.stamp.to_sec()
