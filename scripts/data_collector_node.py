@@ -103,6 +103,8 @@ class RoCatDataCollector:
         current_msg_id = msg.header.seq
 
         # check if messages are missing
+        print('     Last msg id: ', self.last_msg_id)
+        print('     Current msg id: ', current_msg_id)
         if self.is_message_missing(current_msg_id):
             # end program
             rospy.logerr("The program will stop now.")
@@ -331,7 +333,7 @@ class RoCatDataCollector:
 
 if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee2_pose'
+    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee1_pose'
     # Variables for stop collecting current trajectory
     STOP_TRAJ_Z_THRESHOLD = 0.1  # Trajectory end height threshold
 

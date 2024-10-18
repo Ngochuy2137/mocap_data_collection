@@ -90,7 +90,7 @@ class NatNetClient:
         # NatNet stream version. This will be updated to the actual version the server is using during initialization.
         self.__natNetStreamVersion = (3,0,0,0)
 
-        rigid_body_list = ["frisbee2"]
+        rigid_body_list = ["frisbee1"]
         
         print("ROS node initializing ...")
         self.pub_list = [
