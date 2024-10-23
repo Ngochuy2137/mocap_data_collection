@@ -401,7 +401,7 @@ if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
     MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee1_pose'
     # Variables for stop collecting current trajectory
-    STOP_TRAJ_Z_THRESHOLD = 0.4  # Trajectory end height threshold
+    STOP_TRAJ_Z_THRESHOLD = 0.1  # Trajectory end height threshold
 
     # Variables for checking message frequency
     LOW_FREQ_LEVEL1_THRESHOLD = 110  # Minimum message frequency (Hz)
@@ -411,7 +411,7 @@ if __name__ == '__main__':
     low_freq_check_conditions = {
         'low_freq_x_start_check': -0.5,     # Start to check when x > low_freq_x_start_check
         'low_freq_y_start_check': -1.4,     # Start to check when y > low_freq_y_start_check
-        'low_freq_z_start_check': 0.4      # Start to check when z > low_freq_z_start_check
+        'low_freq_z_start_check': 0.1      # Start to check when z > low_freq_z_start_check
     }
     SWAP_YZ = True
     GAP_THRESHOLD = 0.05  # Gap threshold to check if the trajectory is uncontinuous
