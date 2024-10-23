@@ -257,18 +257,19 @@ class RoCatDataCollector:
     '''
     Check if a trajectory is split into multiple segments in case the mocap cannot track the object
     If the distance between 2 consecutive points is greater than a certain distance, the trajectory is considered uncontinuous
-    return:
+    return: the last gap point in a trajectory
         -1 if data is uncontinuous
         >= 0 if data is continuous
     '''
     def is_uncontinuous_trajectory(self, msg_ids):
+        gap_point = -1
         # calculate distance between 2 consecutive points
         for i in range(1, len(msg_ids)):
             next_p = np.array(self.current_trajectory[i][:3], dtype=float)
             prev_p = np.array(self.current_trajectory[i - 1][:3], dtype=float)
             if np.linalg.norm(next_p - prev_p) > self.gap_threshold:
-                return i
-        return -1
+                gap_point = i
+        return gap_point
 
     def measure_callback_time(self, start_time):
         # measure callback function time
