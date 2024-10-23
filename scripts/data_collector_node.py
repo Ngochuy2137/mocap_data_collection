@@ -63,7 +63,7 @@ class RoCatDataCollector:
         
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
-        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=100)
+        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=200)
         self.mocap_object_topic = mocap_object_topic
 
         self.stop_traj_z_threshold, = stop_traj_z_threshold,
@@ -148,6 +148,7 @@ class RoCatDataCollector:
                 new_point_prt = [round(i, self.decima_prt_num) for i in new_point]
                 print('     New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_l1_count=', self.low_freq_l1_count)
 
+                self.measure_callback_time(start_time)
                 # Check end condition of the current trajectory
                 if self.current_position[2] < self.stop_traj_z_threshold:
                     # rospy.loginfo("Trajectory ended with " + str(len(self.current_trajectory)) + " points !")
@@ -161,8 +162,6 @@ class RoCatDataCollector:
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                 
-            self.measure_callback_time(start_time)
-
         finally:
             # Release the lock
             self.recording_lock.release()
@@ -284,11 +283,11 @@ class RoCatDataCollector:
         if len(new_traj_np) > 1:
             msg_ids = new_traj_np[:, 4]
             if self.is_missing_message_trajectory(msg_ids):
-                rospy.logerr("The data is not continuous, some messages from publisher might be missed")
+                rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
                 return False
             
             if self.is_uncontinuous_trajectory(msg_ids):
-                rospy.logerr("The data is uncontinuous, some messages from publisher might be missed")
+                rospy.logerr("There are some gaps in the trajectory\nplease recollect the trajectory !")
                 return False
             
             time_stamps = new_traj_np[:, 3]
@@ -299,14 +298,15 @@ class RoCatDataCollector:
             zeros = np.zeros_like(vx)
             gravity = np.full_like(vx, 9.81)
 
-            print('\n     ------------------------------------------------')
             # print('new_traj_np[:, :3] shape: ', new_traj_np[:, :3].shape)
             # print('vx shape: ', vx.shape)
             # print('vy shape: ', vy.shape)
             # print('vz shape: ', vz.shape)
             # print('zeros shape: ', zeros.shape)
             # print('gravity shape: ', gravity.shape)
-            print('     --------- New trajectory with ' + str(len(new_traj_np)) + ' points ---------')
+            print('\n     --------- A new trajectory was collected with ' + str(len(new_traj_np)) + ' points ---------')
+            print('     -------------------------------------------------------------------')
+
             extened_data_points = np.column_stack((new_traj_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
             trajectory_data = {
                 'points': extened_data_points,
@@ -372,14 +372,16 @@ class RoCatDataCollector:
         file_path = os.path.join(trajectories_dir, file_name)
         data_dict = {'trajectories': self.collected_data}
         np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
-        rospy.loginfo("All atrajectories has been saved to file " + file_name)
+        log_print = "A new trajectory has been added and saved to file " + file_name
+        # print in green color
+        print("\033[92m" + log_print + "\033[0m")
 
     def check_user_input(self,):
         while not rospy.is_shutdown():
             self.enter_event.wait()
             with self.recording_lock:
                 if not self.recording:
-                    print('\n\n------------------------- [', len(self.collected_data), '] -------------------------')
+                    print('\n\n\n\n\n------------------------- [ Number of collected trajectories: ', len(self.collected_data), '] -------------------------')
                     input("Press ENTER to start new trajectory collection ...")
                     self.recording = True
                     rospy.loginfo("Collecting ...\n")
