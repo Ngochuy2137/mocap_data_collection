@@ -47,6 +47,7 @@ from geometry_msgs.msg import PoseStamped
 import time
 import threading
 import os
+import glob
 
 class RoCatDataCollector:
     def __init__(self, mocap_object_topic,
@@ -92,7 +93,7 @@ class RoCatDataCollector:
 
     def pose_callback(self, msg:PoseStamped):
         # measure callback function time
-        start_time = time.time()
+        start_time = rospy.Time.now().to_sec()
         # get x, y, z
         x = msg.pose.position.x
         y = msg.pose.position.y
@@ -159,16 +160,12 @@ class RoCatDataCollector:
                             rospy.logwarn("     The current trajectory is not saved !")
                     self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
+                
+            self.measure_callback_time(start_time)
 
         finally:
             # Release the lock
             self.recording_lock.release()
-
-        # measure callback function time
-        end_time = time.time()
-        callback_freq = 1.0 / (end_time - start_time)
-        if callback_freq < self.low_freq_level2_threshold+30:
-            rospy.logerr("     Callback freq is low: " + str(round(callback_freq, 2)) + " Hz")
                     
     def reset(self,):
         self.current_position = [0, 0, 0]
@@ -273,6 +270,12 @@ class RoCatDataCollector:
                 return True
         return False
 
+    def measure_callback_time(self, start_time):
+        # measure callback function time
+        end_time = rospy.Time.now().to_sec()
+        callback_freq = 1.0 / (end_time - start_time)
+        if callback_freq < self.low_freq_level2_threshold+30:
+            rospy.logwarn("     Callback freq is low: " + str(round(callback_freq, 2)) + " Hz")
 
     # Process the current trajectory
     def process_trajectory(self, new_trajectory):
@@ -315,6 +318,8 @@ class RoCatDataCollector:
             return True
         else:
             rospy.logwarn("The trajectory needs to have at least 2 points to be saved !")
+            rospy.logwarn("It seems that you haven't lifted the frisbee and thrown it yet !")
+            rospy.logwarn("Please try again !")
             return False
     
     def vel_interpolation(self, x_arr, t_arr):
@@ -353,10 +358,18 @@ class RoCatDataCollector:
         if not os.path.exists(trajectories_dir):
             os.makedirs(trajectories_dir)
 
-        file_name = 'trajectories_' + str(self.start_time) + '.npz'
-        file_path = os.path.join(trajectories_dir, file_name)
+        # Delete old files containing 'trajectories_' in their name
+        old_files = glob.glob(os.path.join(trajectories_dir, '*trajectories_' + str(self.start_time) + '*'))
+        for old_file in old_files:
+            try:
+                os.remove(old_file)
+                rospy.loginfo(f"Deleted old file: {old_file}")
+            except OSError as e:
+                rospy.logwarn(f"Error deleting file {old_file}: {e}")
         
         # Save trajectories using numpy npz format
+        file_name = str(len(self.collected_data)) + '-trajectories_' + str(self.start_time) + '.npz'
+        file_path = os.path.join(trajectories_dir, file_name)
         data_dict = {'trajectories': self.collected_data}
         np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
         rospy.loginfo("All atrajectories has been saved to file " + file_name)
