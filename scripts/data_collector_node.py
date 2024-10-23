@@ -381,8 +381,11 @@ class RoCatDataCollector:
             self.enter_event.wait()
             with self.recording_lock:
                 if not self.recording:
-                    print('\n\n\n\n\n------------------------- [ Number of collected trajectories: ', len(self.collected_data), '] -------------------------')
-                    input("Press ENTER to start new trajectory collection ...")
+                    # print with blue background
+                    log_print = "------------------------- [ Number of collected trajectories: ', len(self.collected_data), '] -------------------------"
+                    print("\n\n\n\n\n\033[44m" + log_print + "\033[0m")
+                    log_print = "\033[44mPress ENTER to start new trajectory collection ... \033[0m"
+                    input(log_print)
                     self.recording = True
                     rospy.loginfo("Collecting ...\n")
                     self.enter_event.clear()  # Sau khi nhấn ENTER, dừng chờ đến lần sau
