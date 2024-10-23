@@ -80,6 +80,7 @@ class RoCatDataCollector:
         self.swap_yz = swap_yz
         self.collected_data = []
         self.reset()
+        self.thow_time_count = 0
 
         # Start user input thread
         self.enter_event = threading.Event()
@@ -257,8 +258,8 @@ class RoCatDataCollector:
     Check if a trajectory is split into multiple segments in case the mocap cannot track the object
     If the distance between 2 consecutive points is greater than a certain distance, the trajectory is considered uncontinuous
     return:
-        True if data is uncontinuous
-        False if data is continuous
+        -1 if data is uncontinuous
+        >= 0 if data is continuous
     '''
     def is_uncontinuous_trajectory(self, msg_ids):
         # calculate distance between 2 consecutive points
@@ -266,8 +267,8 @@ class RoCatDataCollector:
             next_p = np.array(self.current_trajectory[i][:3], dtype=float)
             prev_p = np.array(self.current_trajectory[i - 1][:3], dtype=float)
             if np.linalg.norm(next_p - prev_p) > self.gap_threshold:
-                return True
-        return False
+                return i
+        return -1
 
     def measure_callback_time(self, start_time):
         # measure callback function time
@@ -286,8 +287,10 @@ class RoCatDataCollector:
                 rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
                 return False
             
-            if self.is_uncontinuous_trajectory(msg_ids):
-                rospy.logerr("There are some gaps in the trajectory\nplease recollect the trajectory !")
+            gap = self.is_uncontinuous_trajectory(msg_ids)
+            if gap >2:
+                rospy.logerr("There are some gaps in the trajectory, point: " + str(gap))
+                rospy.logerr("please recollect the trajectory !")
                 return False
             
             time_stamps = new_traj_np[:, 3]
@@ -308,6 +311,8 @@ class RoCatDataCollector:
             print('     -------------------------------------------------------------------')
 
             extened_data_points = np.column_stack((new_traj_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
+            # remove the segment with gap, if the gap point is 0 or 1 or 2
+            extened_data_points = extened_data_points[:(gap+1)]
             trajectory_data = {
                 'points': extened_data_points,
                 'msg_ids': msg_ids,
@@ -382,12 +387,13 @@ class RoCatDataCollector:
             with self.recording_lock:
                 if not self.recording:
                     # print with blue background
-                    log_print = "------------------------- [ Number of collected trajectories: ', len(self.collected_data), '] -------------------------"
+                    log_print = str(self.thow_time_count) + " ------------------------- Number of collected trajectories: [" + str(len(self.collected_data)) + "] -------------------------"
                     print("\n\n\n\n\n\033[44m" + log_print + "\033[0m")
                     log_print = "\033[44mPress ENTER to start new trajectory collection ... \033[0m"
                     input(log_print)
                     self.recording = True
                     rospy.loginfo("Collecting ...\n")
+                    self.thow_time_count += 1
                     self.enter_event.clear()  # Sau khi nhấn ENTER, dừng chờ đến lần sau
 
 
@@ -395,7 +401,7 @@ if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
     MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee1_pose'
     # Variables for stop collecting current trajectory
-    STOP_TRAJ_Z_THRESHOLD = 0.1  # Trajectory end height threshold
+    STOP_TRAJ_Z_THRESHOLD = 0.4  # Trajectory end height threshold
 
     # Variables for checking message frequency
     LOW_FREQ_LEVEL1_THRESHOLD = 110  # Minimum message frequency (Hz)
@@ -403,9 +409,9 @@ if __name__ == '__main__':
     LOW_FREQ_L2_NUM_THRESHOLD = 3     # Number of times the message frequency is too low before applying low frequency level 2 treatment: reject current trajectory, reset to collect a new trajectory
     # Condition to activate the low frequency check 
     low_freq_check_conditions = {
-        'low_freq_x_start_check': -1,     # Start to check when x > low_freq_x_start_check
-        'low_freq_y_start_check': -2,     # Start to check when y > low_freq_y_start_check
-        'low_freq_z_start_check': 0.1      # Start to check when z > low_freq_z_start_check
+        'low_freq_x_start_check': -0.5,     # Start to check when x > low_freq_x_start_check
+        'low_freq_y_start_check': -1.4,     # Start to check when y > low_freq_y_start_check
+        'low_freq_z_start_check': 0.4      # Start to check when z > low_freq_z_start_check
     }
     SWAP_YZ = True
     GAP_THRESHOLD = 0.05  # Gap threshold to check if the trajectory is uncontinuous
