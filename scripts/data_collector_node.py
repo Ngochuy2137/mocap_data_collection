@@ -104,10 +104,10 @@ class RoCatDataCollector:
         current_timestamp = msg.header.stamp.to_sec()
         current_msg_id = msg.header.seq
 
-        # check if messages are missing
-        if self.is_message_missing_signal(current_msg_id):
-            rospy.logwarn("Becareful !")
-            return
+        # # check if messages are missing
+        # if self.is_message_missing_signal(current_msg_id):
+        #     rospy.logwarn("Becareful !")
+        #     return
 
         # Check if the lock is released (if user pressed ENTER), else: skip the callback
         if not self.recording_lock.acquire(blocking=False):
@@ -196,10 +196,10 @@ class RoCatDataCollector:
         elif current_msg_id - self.last_msg_id > 1:
             # list all missing messages
             miss_mess = [i for i in range(self.last_msg_id + 1, current_msg_id)]
-            rospy.logerr("\n[------------------------------------------------- ERROR -------------------------------------------------]")
-            rospy.logerr("      Some messages missing: " + str(miss_mess))
-            rospy.logerr("      Please check the connection between the mocap system and the computer which runs this subscriber.")
-            rospy.logerr("[---------------------------------------------------------------------------------------------------------]")
+            # rospy.logwarn("\n[----------------------------------------------- WARNING -----------------------------------------------]")
+            rospy.logwarn("      Some messages missing: " + str(miss_mess))
+            rospy.logwarn("      Please check the connection between the mocap system and the computer which runs this subscriber.")
+            # rospy.logwarn("[---------------------------------------------------------------------------------------------------------]")
             self.last_msg_id = current_msg_id
             return True
         
