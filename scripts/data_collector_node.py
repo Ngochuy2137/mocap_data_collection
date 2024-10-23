@@ -385,8 +385,8 @@ if __name__ == '__main__':
     LOW_FREQ_L2_NUM_THRESHOLD = 3     # Number of times the message frequency is too low before applying low frequency level 2 treatment: reject current trajectory, reset to collect a new trajectory
     # Condition to activate the low frequency check 
     low_freq_check_conditions = {
-        'low_freq_x_start_check': 0.1,     # Start to check when x > low_freq_x_start_check
-        'low_freq_y_start_check': 0.1,     # Start to check when y > low_freq_y_start_check
+        'low_freq_x_start_check': -1,     # Start to check when x > low_freq_x_start_check
+        'low_freq_y_start_check': -2,     # Start to check when y > low_freq_y_start_check
         'low_freq_z_start_check': 0.1      # Start to check when z > low_freq_z_start_check
     }
     SWAP_YZ = True
