@@ -418,6 +418,8 @@ if __name__ == '__main__':
     # Variables for checking message frequency
     LOW_FREQ_LEVEL1_THRESHOLD = 110  # Minimum message frequency (Hz)
     LOW_FREQ_LEVEL2_THRESHOLD = 100  # Minimum message frequency (Hz)
+
+    # TO-DO require to decrease
     LOW_FREQ_L2_NUM_THRESHOLD = 3     # Number of times the message frequency is too low before applying low frequency level 2 treatment: reject current trajectory, reset to collect a new trajectory
     # Condition to activate the low frequency check 
     low_freq_check_conditions = {
@@ -426,7 +428,9 @@ if __name__ == '__main__':
         'low_freq_z_start_check': 0.1      # Start to check when z > low_freq_z_start_check
     }
     SWAP_YZ = True
-    GAP_THRESHOLD = 0.05  # Gap threshold to check if the trajectory is uncontinuous
+
+    # TO-DO require to decrease
+    GAP_THRESHOLD = 0.1  # Gap threshold to check if the trajectory is uncontinuous
 
     collector = RoCatDataCollector(
         MOCAP_OBJECT_TOPIC, 
