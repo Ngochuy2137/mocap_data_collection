@@ -83,8 +83,8 @@ class RoCatDataCollector:
         self.thow_time_count = 0
 
         # Start user input thread
-        self.enter_event = threading.Event()
-        self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
+        self.enable_enter_check_event = threading.Event()
+        self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
         self.recording_lock = threading.Lock()
         self.user_input_thread = threading.Thread(target=self.check_user_input)
         self.user_input_thread.daemon = True
@@ -128,7 +128,7 @@ class RoCatDataCollector:
                 if self.is_message_missing_signal(current_msg_id):
                     # end program
                     rospy.logerr("Reject the current trajectory ! Please recollect the trajectory !")
-                    self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
+                    self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                     # rospy.signal_shutdown("Node shutting down")
                     return
@@ -136,7 +136,7 @@ class RoCatDataCollector:
                 # check if messages frequency is too low
                 low_freq_level, freq = self.is_message_low_frequency_signal(current_timestamp, self.current_position)
                 if low_freq_level == 2:
-                    self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
+                    self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                     rospy.logerr("Please recollect the trajectory !")
                     return          
@@ -147,15 +147,23 @@ class RoCatDataCollector:
 
                 # print out
                 new_point_prt = [round(i, self.decima_prt_num) for i in new_point]
+                print('\n     ', len(self.current_trajectory)-1, ' - New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_l1_count=', self.low_freq_l1_count)
+                if freq < self.low_freq_level2_threshold:
+                    # print in purple color
+                    print('\033[95m' + '             freq: ', freq, '\033[0m')
+                else:
+                    print('             freq: ', freq)
+                print('             low_freq_level: ', low_freq_level)
                 # calculate distance between 2 consecutive points
-                if len(self.current_trajectory) > 1:
+                if len(self.current_trajectory) > 1:    # backward
                     last_p = np.array(self.current_trajectory[-2][:3], dtype=float)
                     curr_p = np.array(self.current_trajectory[-1][:3], dtype=float)
                     distance = np.linalg.norm(curr_p - last_p)
-                print('\n     ', len(self.current_trajectory)-1, ' - New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_l1_count=', self.low_freq_l1_count)
-                print('             gap: ', distance)
-                print('             freq: ', freq)
-                print('             low_freq_level: ', low_freq_level)
+                    if distance > 0.05 and distance < 0.8:
+                        # print in yeallow color
+                        print('\033[93m' + '             gap: ', distance, '\033[0m')
+                    else:
+                        print('             gap: ', distance)
 
                 self.measure_callback_time(start_time)
                 # Check end condition of the current trajectory
@@ -167,7 +175,7 @@ class RoCatDataCollector:
                             self.save_trajectories_to_file()
                         else:
                             rospy.logwarn("     The current trajectory is not saved !")
-                    self.enter_event.set()  # Kích hoạt thread để kiểm tra ENTER
+                    self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                 
         finally:
@@ -269,18 +277,56 @@ class RoCatDataCollector:
         -1 if data is uncontinuous
         >= 0 if data is continuous
     '''
-    def is_gap_trajectory(self, msg_ids):
+    def is_gap_trajectory(self, new_traj_np):
         gap_point = -1
         gap_dist = -1
-        # calculate distance between 2 consecutive points
-        for i in range(1, len(msg_ids)):
-            curr_p = np.array(self.current_trajectory[i][:3], dtype=float)
-            last_p = np.array(self.current_trajectory[i-1][:3], dtype=float)
+        gaps = []
+        # calculate distance between 2 consecutive points and load all gaps
+        for i in range(1, len(new_traj_np)):    # backward
+            curr_p = np.array(new_traj_np[i][:3], dtype=float)
+            last_p = np.array(new_traj_np[i-1][:3], dtype=float)
             dist = np.linalg.norm(curr_p - last_p)
             if dist > self.gap_threshold:
                 gap_point = i
                 gap_dist = dist
-        return gap_point, gap_dist
+                gaps.append((gap_point, gap_dist))
+
+        return gaps
+
+    def gap_treatment(self, new_traj_np):
+        gaps = self.is_gap_trajectory(new_traj_np)
+        name = '[GAP TREATMENT] '
+        
+        if len(gaps) == 0:
+            # print in green color
+            print('\033[92m' + name + 'There is no gap in the trajectory' + '\033[0m')
+            return True, new_traj_np
+        
+        # 1. filter out the gap point within first 30% and last 30% of the trajectory
+        for gap in gaps:
+            gap_point_id = gap[0]
+            trajectory_len = len(new_traj_np)
+            ratio = gap_point_id / trajectory_len
+            if ratio > 0.3 and ratio < 0.7:
+                rospy.logerr(name + "Gap error 1 - Some gaps in the MIDDLE of the trajectory !")
+                rospy.logerr(name + "      We cannot filter out the gap point at " + str(gap_point_id) + " !")
+                rospy.logerr(name + "      Please recollect the trajectory !")
+                return False, new_traj_np
+            if ratio < 0.2:
+                new_traj_np = new_traj_np[gap_point_id:]
+            elif ratio > 0.8:
+                new_traj_np = new_traj_np[:gap_point_id]
+            # print in green color
+            print('\033[92m' + name + 'We filtered out the gap point: ' + str(gap_point_id) + '\033[0m')
+
+        # 2. Check number of left gaps
+        gaps = self.is_gap_trajectory(new_traj_np)
+        if len(gaps) > 0:
+            rospy.logerr(name + "Gap error 2 - Many gaps on the trajectory or there is a gap in the MIDDLE of the trajectory !")
+            rospy.logerr(name + "      Please recollect the trajectory !")
+            return False, new_traj_np
+        else:
+            return True, new_traj_np
 
     def measure_callback_time(self, start_time):
         # measure callback function time
@@ -299,14 +345,16 @@ class RoCatDataCollector:
                 rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
                 return False
             
-            gap_point_id, gap_dist = self.is_gap_trajectory(msg_ids)
-            if gap_point_id >2:
-                rospy.logerr("There are some gaps in the trajectory, point: " + str(gap_point_id) + ', distance: ' + str(gap_dist))
-                rospy.logerr("please recollect the trajectory !")
+            # gap treatment
+            print('check 111: ', new_traj_np.shape)
+            gt_result = self.gap_treatment(new_traj_np)
+            if not gt_result[0]:
                 return False
+            new_traj_np = gt_result[1]
+            print('check 222: ', new_traj_np.shape)
+            # new_traj_np = gt_result[1]
             
             time_stamps = new_traj_np[:, 3]
-
             vx = self.vel_interpolation(new_traj_np[:, 0], time_stamps)  # vx = dx/dt
             vy = self.vel_interpolation(new_traj_np[:, 1], time_stamps)  # vy = dy/dt
             vz = self.vel_interpolation(new_traj_np[:, 2], time_stamps)  # vz = dz/dt
@@ -323,8 +371,6 @@ class RoCatDataCollector:
             print('     -------------------------------------------------------------------')
 
             extened_data_points = np.column_stack((new_traj_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
-            # remove the segment with gap_point_id, if the gap_ point is 0 or 1 or 2
-            extened_data_points = extened_data_points[:(gap_point_id+1)]
             trajectory_data = {
                 'points': extened_data_points,
                 'msg_ids': msg_ids,
@@ -395,7 +441,7 @@ class RoCatDataCollector:
 
     def check_user_input(self,):
         while not rospy.is_shutdown():
-            self.enter_event.wait()
+            self.enable_enter_check_event.wait()
             with self.recording_lock:
                 if not self.recording:
                     # print with blue background
@@ -406,7 +452,7 @@ class RoCatDataCollector:
                     self.recording = True
                     rospy.loginfo("Collecting ...\n")
                     self.thow_time_count += 1
-                    self.enter_event.clear()  # Sau khi nhấn ENTER, dừng chờ đến lần sau
+                    self.enable_enter_check_event.clear()  # Sau khi nhấn ENTER, dừng chờ đến lần sau
 
 
 if __name__ == '__main__':
