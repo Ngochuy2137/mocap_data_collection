@@ -456,7 +456,7 @@ class RoCatDataCollector:
         # Move one directory up
         parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
         # Create a path to the directory ../trajectories
-        trajectories_dir = os.path.join(parent_dir, 'data', object_name)
+        trajectories_dir = os.path.join(parent_dir, 'data', object_name, 'min_len_'+str(self.min_len_traj))
         # Create directory ../trajectories if it does not exist
         if not os.path.exists(trajectories_dir):
             os.makedirs(trajectories_dir)
