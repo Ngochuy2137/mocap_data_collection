@@ -1,0 +1,18 @@
+<launch>
+    <!-- Khai báo các argument -->
+    <arg name="mocap_topic" default="/mocap_pose_topic/bumerang1_pose" />
+    <arg name="impact_point_topic" default="/NAE/impact_point" />
+
+    <!-- Định nghĩa các tham số mặc định -->
+    <param name="mocap_topic" value="$(arg mocap_topic)" />
+    <param name="impact_point_topic" value="$(arg impact_point_topic)" />
+
+    <!-- Khởi chạy node với các tham số -->
+    <node name="nae_debugger_node" pkg="nae_online_prediction" type="nae_debugger_node.py" output="screen">
+        <param name="mocap_topic" value="$(arg mocap_topic)" />
+        <param name="impact_point_topic" value="$(arg impact_point_topic)" />
+    </node>
+
+    <!-- Khởi chạy RViz -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find mocap_data_collection)/rviz/rviz.rviz" />
+</launch>
