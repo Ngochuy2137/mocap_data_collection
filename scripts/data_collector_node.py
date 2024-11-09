@@ -48,6 +48,7 @@ import time
 import threading
 import os
 import glob
+from python_utils.plotter import Plotter
 
 class RoCatDataCollector:
     def __init__(self, mocap_object_topic,
@@ -65,6 +66,8 @@ class RoCatDataCollector:
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
         self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=200)
+        self.util_plotter = Plotter()
+
         self.mocap_object_topic = mocap_object_topic
         self.swap_yz = swap_yz
         self.final_point_height_threshold = final_point_height_threshold
@@ -184,6 +187,9 @@ class RoCatDataCollector:
                             self.save_trajectories_to_file()
                         else:
                             rospy.logwarn("     The current trajectory is not saved !")
+                            # remove the last trajectory
+                            if self.collected_data:
+                                self.collected_data.pop()
                     self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                 
@@ -282,19 +288,19 @@ class RoCatDataCollector:
     '''
     Check if a trajectory is split into multiple segments in case the mocap cannot track the object
     If the distance between 2 consecutive points is greater than a certain distance, the trajectory is considered uncontinuous
-    return: the last gap point in a trajectory
-        -1 if data is uncontinuous
-        >= 0 if data is continuous
+    return: point ID and distance
+        Ex: 1, 2, 3, 4, 5, gap, 6, 7, 8, gap, 9, 10
+        -> return [(6, distance), (9, distance)]
     '''
     def is_gap_trajectory(self, new_traj_np):
         gap_point_id = -1
         gap_dist = -1
         gaps = []
         # calculate distance between 2 consecutive points and load all gaps
-        for i in range(0, len(new_traj_np)-1):    # backward
+        for i in range(1, len(new_traj_np)):    # backward
             curr_p = np.array(new_traj_np[i][:3], dtype=float)
-            next_p = np.array(new_traj_np[i+1][:3], dtype=float)
-            dist = np.linalg.norm(curr_p - next_p)
+            prev_p = np.array(new_traj_np[i-1][:3], dtype=float)
+            dist = np.linalg.norm(curr_p - prev_p)
             if dist > self.gap_recog_threshold:
                 gap_point_id = i
                 gap_dist = dist
@@ -303,39 +309,64 @@ class RoCatDataCollector:
         return gaps
 
     def gap_treatment(self, new_traj_np):
-        gaps = self.is_gap_trajectory(new_traj_np)
         name = '[GAP TREATMENT] '
-        
+        segments_good = []
+        segments_bad = []
+
+        gaps = self.is_gap_trajectory(new_traj_np)
         if len(gaps) == 0:
             # print in green color
             print('\033[92m' + name + 'There is no gap in the trajectory' + '\033[0m')
-            return True, new_traj_np
+            return True, np.array([new_traj_np])
         
-        # 1. filter out the gap point within first 30% and last 30% of the trajectory
+        # get segments_good with gaps
+        # print in yellow color
+        print('\033[93m' + name + 'There are ' + str(len(gaps)) + ' gaps in the trajectory' + '\033[0m')
+        last_gap_point_id = 0
+        count_good = 0
+        count_bad = 0
+        count = 0
+        print('----- Segments -----')
         for gap in gaps:
             gap_point_id = gap[0]
-            trajectory_len = len(new_traj_np)
-            ratio = gap_point_id / trajectory_len
-            if ratio > 0.3 and ratio < 0.7:
-                rospy.logerr(name + "Gap error 1 - Some gaps in the MIDDLE of the trajectory !")
-                rospy.logerr(name + "      We cannot filter out the gap point at " + str(gap_point_id) + " !")
-                rospy.logerr(name + "      Please recollect the trajectory !")
-                return False, new_traj_np
-            if ratio < 0.2:
-                new_traj_np = new_traj_np[gap_point_id:]
-            elif ratio > 0.8:
-                new_traj_np = new_traj_np[:gap_point_id]
-            # print in green color
-            print('\033[92m' + name + 'We filtered out the gap point: ' + str(gap_point_id) + '\033[0m')
-
-        # 2. Check number of left gaps
-        gaps = self.is_gap_trajectory(new_traj_np)
-        if len(gaps) > 0:
-            rospy.logerr(name + "Gap error 2 - Many gaps on the trajectory or there is a gap in the MIDDLE of the trajectory !")
-            rospy.logerr(name + "      Please recollect the trajectory !")
-            return False, new_traj_np
+            traj_seg = new_traj_np[last_gap_point_id : gap_point_id]
+            # only keep the segment if it is long enough
+            if gap_point_id - last_gap_point_id >= self.min_len_traj:
+                segments_good.append(traj_seg)
+                count_good += 1
+                count += 1
+            else:
+                segments_bad.append(traj_seg)
+                count_bad += 1
+                count += 1
+            print('     Segment ', count, ' : ', len(traj_seg), ' points')
+            last_gap_point_id = gap_point_id
+        # add the last segment
+        traj_seg = new_traj_np[last_gap_point_id:]
+        if len(traj_seg) >= self.min_len_traj:
+            segments_good.append(traj_seg)
+            count_good += 1
         else:
-            return True, new_traj_np
+            segments_bad.append(traj_seg)
+            count_bad += 1
+        count += 1
+        print('     Segment ', count, ' : ', len(traj_seg), ' points')
+        print('There are ', count_good, ' good segments and ', count_bad, ' bad segments')
+        
+        segments_good_plot = [[seg, 'o'] for seg in segments_good]
+        segments_bad_plot = [[seg, 'x'] for seg in segments_bad]
+
+        # merge segments_bad to segments_good into 1 list
+        segments_plot = segments_good_plot + segments_bad_plot
+
+        title = 'Data ' + str(len(self.collected_data)) + '/' + str(self.thow_time_count) + ': ' + str(len(segments_plot)) +' all segments'
+        self.util_plotter.plot_samples_rviz(segments_plot, title = title)
+        if len(segments_good) == 0:
+            rospy.logerr(name + "Gap error 1 - No segment is long enough !")
+            rospy.logerr(name + "      Please recollect the trajectory !")
+            return False, None
+    
+        return True, np.array(segments_good)
 
     def measure_callback_time(self, start_time):
         # measure callback function time
@@ -349,44 +380,50 @@ class RoCatDataCollector:
         # Interpolate vx, vy, vz from x, y, z
         new_traj_np = np.array(new_trajectory)
         if len(new_traj_np) > 1:
-            msg_ids = new_traj_np[:, 4]
-            if self.is_missing_message_trajectory(msg_ids):
+            if self.is_missing_message_trajectory(new_traj_np[:, 4]):
                 rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
                 return False
             
             # gap treatment
-            print('check 111: ', new_traj_np.shape)
+            # print('new_traj_np shape: ', new_traj_np.shape[1]) # 5
             gt_result = self.gap_treatment(new_traj_np)
             if not gt_result[0]:
                 return False
-            new_traj_np = gt_result[1]
-            print('check 222: ', new_traj_np.shape)
-            # new_traj_np = gt_result[1]
+            segments = gt_result[1]
             
-            time_stamps = new_traj_np[:, 3]
-            vx = self.vel_interpolation(new_traj_np[:, 0], time_stamps)  # vx = dx/dt
-            vy = self.vel_interpolation(new_traj_np[:, 1], time_stamps)  # vy = dy/dt
-            vz = self.vel_interpolation(new_traj_np[:, 2], time_stamps)  # vz = dz/dt
-            zeros = np.zeros_like(vx)
-            gravity = np.full_like(vx, 9.81)
+            for seg in segments:
+                traj_seg = seg[:, :3]
+                time_stamp_seq = seg[:, 3]
+                id_seq = seg[:, 4]
 
-            # print('new_traj_np[:, :3] shape: ', new_traj_np[:, :3].shape)
-            # print('vx shape: ', vx.shape)
-            # print('vy shape: ', vy.shape)
-            # print('vz shape: ', vz.shape)
-            # print('zeros shape: ', zeros.shape)
-            # print('gravity shape: ', gravity.shape)
-            print('\n     --------- A new trajectory was collected with ' + str(len(new_traj_np)) + ' points ---------')
-            print('     -------------------------------------------------------------------')
+                vx = self.vel_interpolation(traj_seg[:, 0], time_stamp_seq)  # vx = dx/dt
+                vy = self.vel_interpolation(traj_seg[:, 1], time_stamp_seq)  # vy = dy/dt
+                vz = self.vel_interpolation(traj_seg[:, 2], time_stamp_seq)  # vz = dz/dt
+                zeros = np.zeros_like(vx)
+                gravity = np.full_like(vx, 9.81)
 
-            extened_data_points = np.column_stack((new_traj_np[:, :3], vx, vy, vz, zeros, zeros, gravity))
-            trajectory_data = {
-                'points': extened_data_points,
-                'msg_ids': msg_ids,
-                'time_stamps': time_stamps,
-                'low_freq_num': self.low_freq_l1_count
-            }
-            self.collected_data.append(trajectory_data)
+                # print('seg[:, :3] shape: ', seg[:, :3].shape)
+                # print('vx shape: ', vx.shape)
+                # print('vy shape: ', vy.shape)
+                # print('vz shape: ', vz.shape)
+                # print('zeros shape: ', zeros.shape)
+                # print('gravity shape: ', gravity.shape)
+
+                extened_data_points = np.column_stack((traj_seg[:, :3], vx, vy, vz, zeros, zeros, gravity))
+                trajectory_data = {
+                    'points': extened_data_points,
+                    'msg_ids': id_seq,
+                    'time_stamps': time_stamp_seq,
+                    'low_freq_num': self.low_freq_l1_count / len(segments)
+                }
+                self.collected_data.append(trajectory_data)
+                print('\n     --------- A new trajectory was collected with ' + str(len(traj_seg)) + ' points ---------')
+                print('     -------------------------------------------------------------------')
+            
+            # plot all segments
+            # traj_segments = [[seg, 'o'] for seg in segments]
+            # title = 'Data ' + str(len(self.collected_data)) + '/' + str(self.thow_time_count) + ': ' + str(len(traj_segments)) +' good segments'
+            # self.util_plotter.plot_samples_rviz(traj_segments, title)
             return True
         else:
             rospy.logwarn("The trajectory needs to have at least 2 points to be saved !")
@@ -476,9 +513,9 @@ if __name__ == '__main__':
 
     # Limit collection area
     collection_area = {
-        'collection_area_x': [-0.5, 1000],
-        'collection_area_y': [-1.4, 1000],
-        'collection_area_z': [0.1, 1000]
+        'collection_area_x': [-1.5, 4.5],
+        'collection_area_y': [-1.4, 2],
+        'collection_area_z': [0.15, 1000]
     }
     
     # Low frequency treatment: Variables for checking message frequency
@@ -490,7 +527,7 @@ if __name__ == '__main__':
 
     # Gap treatments
     gap_treatment_params = {
-        'gap_recog_threshold': 0.1,
+        'gap_recog_threshold': 0.08,
         'min_len_traj': 50
     }
 
