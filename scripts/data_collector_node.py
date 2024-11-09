@@ -317,14 +317,14 @@ class RoCatDataCollector:
         if len(gaps) == 0:
             # print in green color
             print('\033[92m' + name + 'There is no gap in the trajectory' + '\033[0m')
-            return True, np.array([new_traj_np])
+            title = 'Data ' + str(len(self.collected_data)) + '/' + str(self.thow_time_count) + ': No gap'
+            self.util_plotter.plot_samples_rviz([[new_traj_np, 'o']], title = title)
+            return True, [new_traj_np]
         
         # get segments_good with gaps
         # print in yellow color
         print('\033[93m' + name + 'There are ' + str(len(gaps)) + ' gaps in the trajectory' + '\033[0m')
         last_gap_point_id = 0
-        count_good = 0
-        count_bad = 0
         count = 0
         print('----- Segments -----')
         for gap in gaps:
@@ -333,11 +333,9 @@ class RoCatDataCollector:
             # only keep the segment if it is long enough
             if gap_point_id - last_gap_point_id >= self.min_len_traj:
                 segments_good.append(traj_seg)
-                count_good += 1
                 count += 1
             else:
                 segments_bad.append(traj_seg)
-                count_bad += 1
                 count += 1
             print('     Segment ', count, ' : ', len(traj_seg), ' points')
             last_gap_point_id = gap_point_id
@@ -345,13 +343,11 @@ class RoCatDataCollector:
         traj_seg = new_traj_np[last_gap_point_id:]
         if len(traj_seg) >= self.min_len_traj:
             segments_good.append(traj_seg)
-            count_good += 1
         else:
             segments_bad.append(traj_seg)
-            count_bad += 1
         count += 1
         print('     Segment ', count, ' : ', len(traj_seg), ' points')
-        print('There are ', count_good, ' good segments and ', count_bad, ' bad segments')
+        print('There are ', len(segments_good), ' good segments and ', len(segments_bad), ' bad segments')
         
         segments_good_plot = [[seg, 'o'] for seg in segments_good]
         segments_bad_plot = [[seg, 'x'] for seg in segments_bad]
@@ -366,7 +362,7 @@ class RoCatDataCollector:
             rospy.logerr(name + "      Please recollect the trajectory !")
             return False, None
     
-        return True, np.array(segments_good)
+        return True, segments_good
 
     def measure_callback_time(self, start_time):
         # measure callback function time
@@ -495,9 +491,14 @@ class RoCatDataCollector:
                     # print with blue background
                     time_collection = round((time.time() - self.time_start) / 60, 5)
                     log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " ------------------------- Number of collected trajectories: [" + str(len(self.collected_data)) + "] -------------------------"
-                    print("\n\n\n\n\n\033[44m" + log_print + "\033[0m")
+                    print("\n\n\033[44m" + log_print + "\033[0m")
                     log_print = "\033[44mPress ENTER to start new trajectory collection ... \033[0m"
-                    input(log_print)
+                    print(log_print)
+                    # print in blue background
+                    print('\033[44m' + '----------------------------------------------------------------------------------------------------------' + '\033[0m')
+                    input()
+
+                    # self.util_plotter.reset_plot()
                     self.recording = True
                     rospy.loginfo("Waiting for topic " + self.mocap_object_topic)
                     self.thow_time_count += 1
