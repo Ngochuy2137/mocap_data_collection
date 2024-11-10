@@ -129,7 +129,7 @@ class RoCatDataCollector:
         try:
             enable_recording = (self.recording and 
                                 self.current_position[0] > self.collection_area_x[0] and self.current_position[0] < self.collection_area_x[1] and
-                                self.current_position[1] > self.collection_area_y[0] and self.current_position[1] < self.collection_area_y[1])
+                                self.current_position[2] > self.collection_area_z[0] and self.current_position[2] < self.collection_area_z[1])
             if enable_recording:    
                 # check if messages are missing
                 if self.is_message_missing_signal(current_msg_id):
@@ -175,27 +175,37 @@ class RoCatDataCollector:
                 self.measure_callback_time(start_time)
                 # Check end condition of the current trajectory
                 if self.current_position[1] < self.final_point_height_threshold:
-                    if self.process_data(self.current_trajectory):
-                        # Save all trajectories to file after each new proper trajectory
-                        enable_saving = input("     Do you want to save the current trajectory ? (y/n): ")
-                        while enable_saving not in ['y', 'n']:
-                            enable_saving = input("     Please input y or n: ")
-                        if enable_saving == 'y':
-                            self.save_trajectories_to_file()
-                        else:
-                            rospy.logwarn("     The current trajectory is not saved !")
-                            # remove the last trajectory
-                            if self.collected_data:
-                                self.collected_data.pop()
-                            if self.collected_data_raw:
-                                self.collected_data_raw.pop()
-                    self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
+                    self.finalize_trajectory()
+                    
+            else:
+                if len(self.current_trajectory) > 0:
+                    # print in yellow color
+                    print('\033[93m' + '     The object is out of the collection area. We need to stop adding point to current trajectory ealier than expected !' + '\033[0m')
+                    self.finalize_trajectory()
                     self.reset()
                 
         finally:
             # Release the lock
             self.recording_lock.release()
-                    
+
+    def finalize_trajectory(self,):
+        if self.process_data(self.current_trajectory):
+            # Save all trajectories to file after each new proper trajectory
+            enable_saving = input("     Do you want to save the current trajectory ? (y/n): ")
+            while enable_saving not in ['y', 'n']:
+                enable_saving = input("     Please input y or n: ")
+            if enable_saving == 'y':
+                self.save_trajectories_to_file()
+            else:
+                rospy.logwarn("     The current trajectory is not saved !")
+                # remove the last trajectory
+                if self.collected_data:
+                    self.collected_data.pop()
+                if self.collected_data_raw:
+                    self.collected_data_raw.pop()
+        self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
+        self.reset()     
+
     def reset(self,):
         self.current_position = [0, 0, 0]
         self.current_trajectory = []
@@ -316,6 +326,10 @@ class RoCatDataCollector:
         if len(gaps) == 0:
             # print in green color
             print('\033[92m' + name + 'There is no gap in the trajectory' + '\033[0m')
+            if len(new_traj_np) < self.min_len_traj:
+                rospy.logerr(name + "Gap error 2 - The trajectory is too short with " + str(len(new_traj_np)) + " points !")
+                rospy.logerr(name + "      Please recollect the trajectory !")
+                return False, None
             title = 'Trial ' + str(self.thow_time_count) + \
             ':\n     Data (' + str(len(self.collected_data)+1) + '): No gap' + \
             '\n     Raw data: ' + str(len(self.collected_data_raw)+1)
@@ -392,12 +406,16 @@ class RoCatDataCollector:
             for seg in segments:
                 new_pro_seg = self.process_one_trajectory(seg)
                 self.collected_data.append(new_pro_seg)
-                print('\n     A new trajectory was collected with ' + str(len(new_pro_seg)) + ' points')
+                # print in green color background
+                pn = '\033[42m' + str(len(new_pro_seg['points'])) + ' points' + '\033[0m'
+                print('\n     A new trajectory was collected with ' + pn)
             
             # process raw data (no gap treatment)
             new_pro_data_raw = self.process_one_trajectory(new_traj_np)
             self.collected_data_raw.append(new_pro_data_raw)
-            print('\n     A new RAW trajectory was collected with ' + str(len(new_pro_data_raw)) + ' points')
+            # print in green color background
+            pn_raw = '\033[42m' + str(len(new_pro_data_raw['points'])) + ' points' + '\033[0m'
+            print('\n     A new RAW trajectory was collected with ' + pn_raw)
 
             return True
         else:
@@ -533,13 +551,13 @@ class RoCatDataCollector:
 if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
 
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/bumerang1_pose'
-    FINAL_POINT_HEIGHT_THRESHOLD = 0.15  # The height of the final point of the trajectory to stop collecting a trajectory
+    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/big_plane_pose'
+    FINAL_POINT_HEIGHT_THRESHOLD = 0.2  # The height of the final point of the trajectory to stop collecting a trajectory
 
     # Limit collection area
     collection_area = {
-        'collection_area_x': [-1.5, 4.5],
-        'collection_area_y': [-0.1, 1000],
+        'collection_area_x': [-1.5, 4],
+        'collection_area_y': [0.0, 1000],
         'collection_area_z': [-1.5, 2.5]
     }
     
