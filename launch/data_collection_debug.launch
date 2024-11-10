@@ -8,10 +8,10 @@
     <param name="impact_point_topic" value="$(arg impact_point_topic)" />
 
     <!-- Khởi chạy node với các tham số -->
-    <node name="nae_debugger_node" pkg="nae_online_prediction" type="nae_debugger_node.py" output="screen">
+    <!-- <node name="nae_debugger_node" pkg="nae_online_prediction" type="nae_debugger_node.py" output="screen">
         <param name="mocap_topic" value="$(arg mocap_topic)" />
         <param name="impact_point_topic" value="$(arg impact_point_topic)" />
-    </node>
+    </node> -->
 
     <!-- Khởi chạy RViz -->
     <node name="rviz" pkg="rviz" type="rviz" args="-d $(find mocap_data_collection)/rviz/rviz.rviz" />
