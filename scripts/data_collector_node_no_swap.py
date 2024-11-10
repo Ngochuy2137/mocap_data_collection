@@ -86,6 +86,7 @@ class RoCatDataCollector:
 
 
         self.collected_data = []
+        self.collected_data_raw = [] # no gap treatment data
         self.reset()
         self.thow_time_count = 0
         self.time_start = time.time()
@@ -174,7 +175,7 @@ class RoCatDataCollector:
                 self.measure_callback_time(start_time)
                 # Check end condition of the current trajectory
                 if self.current_position[1] < self.final_point_height_threshold:
-                    if self.process_trajectory(self.current_trajectory):
+                    if self.process_data(self.current_trajectory):
                         # Save all trajectories to file after each new proper trajectory
                         enable_saving = input("     Do you want to save the current trajectory ? (y/n): ")
                         while enable_saving not in ['y', 'n']:
@@ -186,6 +187,8 @@ class RoCatDataCollector:
                             # remove the last trajectory
                             if self.collected_data:
                                 self.collected_data.pop()
+                            if self.collected_data_raw:
+                                self.collected_data_raw.pop()
                     self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
                     self.reset()
                 
@@ -313,7 +316,9 @@ class RoCatDataCollector:
         if len(gaps) == 0:
             # print in green color
             print('\033[92m' + name + 'There is no gap in the trajectory' + '\033[0m')
-            title = 'Data ' + str(len(self.collected_data)+1) + '/' + str(self.thow_time_count) + ': No gap'
+            title = 'Trial ' + str(self.thow_time_count) + \
+            ':\n     Data (' + str(len(self.collected_data)+1) + '): No gap' + \
+            '\n     Raw data: ' + str(len(self.collected_data_raw)+1)
             self.util_plotter.plot_samples_rviz([[new_traj_np, 'o']], title = title)
             return True, [new_traj_np]
         
@@ -351,7 +356,9 @@ class RoCatDataCollector:
         # merge segments_bad to segments_good into 1 list
         segments_plot = segments_good_plot + segments_bad_plot
 
-        title = 'Data ' + str(len(self.collected_data)+1) + '/' + str(self.thow_time_count) + ': ' + str(len(segments_plot)) +' all segments'
+        title = 'Trial ' + str(self.thow_time_count) + \
+            ':\n     Data: ' + str(len(self.collected_data)+1) + ' - ' + str(len(segments_plot)) +' segments' + \
+            '\n     Raw data: ' + str(len(self.collected_data_raw)+1)
         self.util_plotter.plot_samples_rviz(segments_plot, title = title)
         if len(segments_good) == 0:
             rospy.logerr(name + "Gap error 1 - No segment is long enough !")
@@ -368,7 +375,7 @@ class RoCatDataCollector:
             rospy.logwarn("     Callback freq is low: " + str(round(callback_freq, 2)) + " Hz")
 
     # Process the current trajectory
-    def process_trajectory(self, new_trajectory):
+    def process_data(self, new_trajectory):
         # Interpolate vx, vy, vz from x, y, z
         new_traj_np = np.array(new_trajectory)
         if len(new_traj_np) > 1:
@@ -382,46 +389,42 @@ class RoCatDataCollector:
             if not gt_result[0]:
                 return False
             segments = gt_result[1]
-            
             for seg in segments:
-                traj_seg = seg[:, :3]
-                time_stamp_seq = seg[:, 3]
-                id_seq = seg[:, 4]
-
-                vx = self.vel_interpolation(traj_seg[:, 0], time_stamp_seq)  # vx = dx/dt
-                vy = self.vel_interpolation(traj_seg[:, 1], time_stamp_seq)  # vy = dy/dt
-                vz = self.vel_interpolation(traj_seg[:, 2], time_stamp_seq)  # vz = dz/dt
-                zeros = np.zeros_like(vx)
-                gravity = np.full_like(vx, -9.81)
-
-                # print('seg[:, :3] shape: ', seg[:, :3].shape)
-                # print('vx shape: ', vx.shape)
-                # print('vy shape: ', vy.shape)
-                # print('vz shape: ', vz.shape)
-                # print('zeros shape: ', zeros.shape)
-                # print('gravity shape: ', gravity.shape)
-
-                extened_data_points = np.column_stack((traj_seg[:, :3], vx, vy, vz, zeros, gravity, zeros))
-                trajectory_data = {
-                    'points': extened_data_points,
-                    'msg_ids': id_seq,
-                    'time_stamps': time_stamp_seq,
-                    'low_freq_num': self.low_freq_l1_count / len(segments)
-                }
-                self.collected_data.append(trajectory_data)
-                print('\n     --------- A new trajectory was collected with ' + str(len(traj_seg)) + ' points ---------')
-                print('     -------------------------------------------------------------------')
+                new_pro_seg = self.process_one_trajectory(seg)
+                self.collected_data.append(new_pro_seg)
+                print('\n     A new trajectory was collected with ' + str(len(new_pro_seg)) + ' points')
             
-            # plot all segments
-            # traj_segments = [[seg, 'o'] for seg in segments]
-            # title = 'Data ' + str(len(self.collected_data)) + '/' + str(self.thow_time_count) + ': ' + str(len(traj_segments)) +' good segments'
-            # self.util_plotter.plot_samples_rviz(traj_segments, title)
+            # process raw data (no gap treatment)
+            new_pro_data_raw = self.process_one_trajectory(new_traj_np)
+            self.collected_data_raw.append(new_pro_data_raw)
+            print('\n     A new RAW trajectory was collected with ' + str(len(new_pro_data_raw)) + ' points')
+
             return True
         else:
             rospy.logwarn("The trajectory needs to have at least 2 points to be saved !")
             rospy.logwarn("It seems that you haven't lifted the frisbee and thrown it yet !")
             rospy.logwarn("Please try again !")
             return False
+    
+    def process_one_trajectory(self, one_trajectory):
+        traj_raw = one_trajectory[:, :3]
+        time_stamp_raw = one_trajectory[:, 3]
+        id_raw = one_trajectory[:, 4]
+
+        vx = self.vel_interpolation(traj_raw[:, 0], time_stamp_raw)  # vx = dx/dt
+        vy = self.vel_interpolation(traj_raw[:, 1], time_stamp_raw)  # vy = dy/dt
+        vz = self.vel_interpolation(traj_raw[:, 2], time_stamp_raw)  # vz = dz/dt
+        zeros = np.zeros_like(vx)
+        gravity = np.full_like(vx, -9.81)
+
+        extened_data_points_raw = np.column_stack((traj_raw[:, :3], vx, vy, vz, zeros, gravity, zeros))
+        trajectory_data = {
+            'points': extened_data_points_raw,
+            'msg_ids': id_raw,
+            'time_stamps': time_stamp_raw,
+            'low_freq_num': self.low_freq_l1_count
+        }
+        return trajectory_data
     
     def vel_interpolation(self, x_arr, t_arr):
         vel = []
@@ -455,6 +458,8 @@ class RoCatDataCollector:
         current_dir = os.path.dirname(os.path.realpath(__file__))
         # Move one directory up
         parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
+
+        # --- 1. Save gap treated data ---
         # Create a path to the directory ../trajectories
         trajectories_dir = os.path.join(parent_dir, 'data', object_name, 'min_len_'+str(self.min_len_traj))
         # Create directory ../trajectories if it does not exist
@@ -462,7 +467,7 @@ class RoCatDataCollector:
             os.makedirs(trajectories_dir)
 
         # Delete old files containing 'trajectories_' in their name
-        old_files = glob.glob(os.path.join(trajectories_dir, '*trajectories_' + str(self.start_time) + '*'))
+        old_files = glob.glob(os.path.join(trajectories_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))
         for old_file in old_files:
             try:
                 os.remove(old_file)
@@ -471,13 +476,34 @@ class RoCatDataCollector:
                 rospy.logwarn(f"Error deleting file {old_file}: {e}")
         
         # Save trajectories using numpy npz format
-        file_name = str(len(self.collected_data)) + '-trajectories_' + str(self.start_time) + '.npz'
+        file_name = str(self.start_time) + '-traj_num-' + str(len(self.collected_data)) + '.npz'
         file_path = os.path.join(trajectories_dir, file_name)
         data_dict = {'trajectories': self.collected_data}
         np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
-        log_print = "A new trajectory has been added and saved to file " + file_path
+        log_print = "[DATA] A new trajectory has been added and saved to file " + file_path
         # print in green color
         print("\033[92m" + log_print + "\033[0m")
+
+        # --- 2. Save raw data (no gap treatment) ---
+        trajectories_raw_dir = os.path.join(parent_dir, 'data-no-gap-treatment', object_name, 'min_len_'+str(self.min_len_traj))
+        if not os.path.exists(trajectories_raw_dir):
+            os.makedirs(trajectories_raw_dir)
+        old_files = glob.glob(os.path.join(trajectories_raw_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))
+        for old_file in old_files:
+            try:
+                os.remove(old_file)
+                rospy.loginfo(f"Deleted old file: {old_file}")
+            except OSError as e:
+                rospy.logwarn(f"Error deleting file {old_file}: {e}")
+        # Save trajectories using numpy npz format
+        file_name = str(self.start_time) + '-traj_num-' + str(len(self.collected_data_raw)) + '.npz'
+        file_path = os.path.join(trajectories_raw_dir, file_name)
+        data_dict = {'trajectories': self.collected_data_raw}
+        np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
+        log_print = "[RAW DATA] A new trajectory has been added and saved to file " + file_path
+        # print in green color
+        print("\033[92m" + log_print + "\033[0m")
+
 
     def check_user_input(self,):
         while not rospy.is_shutdown():
@@ -486,17 +512,20 @@ class RoCatDataCollector:
                 if not self.recording:
                     # print with blue background
                     time_collection = round((time.time() - self.time_start) / 60, 5)
-                    log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " ------------------------- Number of collected trajectories: [" + str(len(self.collected_data)) + "] -------------------------"
-                    print("\n\n\033[44m" + log_print + "\033[0m")
-                    log_print = "\033[44mPress ENTER to start new trajectory collection ... \033[0m"
-                    print(log_print)
+                    print('\n\n' + '\033[44m' + '--------------------------------------------------------------------------------------------------------------' + '\033[0m')
+                    log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " -----------------------   Number of collected trajectories: [" + str(len(self.collected_data)) + "]   -----------------------"
+                    print("033[44m" + log_print + "\033[0m")
+                    log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " ----------------------- Number of collected raw trajectories: [" + str(len(self.collected_data_raw)) + "] -----------------------"
+                    print("033[44m" + log_print + "\033[0m")
+                    print('                                         Press ENTER to start new trajectory collection')
                     # print in blue background
-                    print('\033[44m' + '----------------------------------------------------------------------------------------------------------' + '\033[0m')
+                    print('\033[44m' + '--------------------------------------------------------------------------------------------------------------' + '\033[0m')
                     input()
 
                     # self.util_plotter.reset_plot()
                     self.recording = True
-                    rospy.loginfo("Waiting for topic " + self.mocap_object_topic)
+                    # print in green color
+                    print('\033[92m' + 'Ready ' + self.mocap_object_topic + '\033[0m')
                     self.thow_time_count += 1
                     self.enable_enter_check_event.clear()  # Sau khi nhấn ENTER, dừng chờ đến lần sau
 
