@@ -551,8 +551,8 @@ class RoCatDataCollector:
 if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
 
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/big_plane_pose'
-    FINAL_POINT_HEIGHT_THRESHOLD = 0.2  # The height of the final point of the trajectory to stop collecting a trajectory
+    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/hat_pose'  # The topic to subscribe to
+    FINAL_POINT_HEIGHT_THRESHOLD = 0.5  # The height of the final point of the trajectory to stop collecting a trajectory
 
     # Limit collection area
     collection_area = {
