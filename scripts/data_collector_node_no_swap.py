@@ -109,7 +109,13 @@ class RoCatDataCollector:
         y = msg.pose.position.y
         z = msg.pose.position.z
 
+        ox = msg.pose.orientation.x
+        oy = msg.pose.orientation.y
+        oz = msg.pose.orientation.z
+        ow = msg.pose.orientation.w
+
         self.current_position = [x, y, z]
+        self.current_orientation = [ox, oy, oz, ow]
         current_timestamp = msg.header.stamp.to_sec()
         current_msg_id = msg.header.seq
 
@@ -149,12 +155,15 @@ class RoCatDataCollector:
                     return          
                   
                 # Save the current position to the current trajectory
-                new_point = self.current_position + [current_timestamp] + [current_msg_id]
+                new_point = [self.current_position, self.current_orientation, current_timestamp, current_msg_id]
                 self.current_trajectory.append(new_point)
 
                 # print out
-                new_point_prt = [round(i, self.decima_prt_num) for i in new_point]
-                print('\n     ', len(self.current_trajectory)-1, ' - New point: x=', new_point_prt[0], ' y=', new_point_prt[1], ' z=', new_point_prt[2], ' t=', new_point_prt[3], ' low_freq_l1_count=', self.low_freq_l1_count)
+                new_point_prt = [
+                    [round(val, self.decima_prt_num) for val in sublist] if isinstance(sublist, list) else round(sublist, self.decima_prt_num)
+                    for sublist in new_point
+                ]
+                print('\n     ', len(self.current_trajectory)-1, ' - New point: pos = ', new_point_prt[0], ' ori = ', new_point_prt[1], ' time = ', new_point_prt[2], ' id = ', new_point_prt[3], ' low_freq_l1_count = ', self.low_freq_l1_count)
                 if freq < self.low_freq_l2_threshold:
                     # print in purple color
                     print('\033[95m' + '             freq: ', freq, '\033[0m')
@@ -163,8 +172,8 @@ class RoCatDataCollector:
                 print('             low_freq_level: ', low_freq_level)
                 # calculate distance between 2 consecutive points
                 if len(self.current_trajectory) > 1:    # backward
-                    last_p = np.array(self.current_trajectory[-2][:3], dtype=float)
-                    curr_p = np.array(self.current_trajectory[-1][:3], dtype=float)
+                    last_p = np.array(self.current_trajectory[-2][0][:3], dtype=float)
+                    curr_p = np.array(self.current_trajectory[-1][0][:3], dtype=float)
                     distance = np.linalg.norm(curr_p - last_p)
                     if distance > 0.05 and distance < 0.8:
                         # print in yeallow color
@@ -178,7 +187,7 @@ class RoCatDataCollector:
                     self.finalize_trajectory()
                     
             else:
-                if len(self.current_trajectory) > 0:
+                if len(self.current_trajectory) > self.min_len_traj:
                     # print in yellow color
                     print('\033[93m' + '     The object is out of the collection area. We need to stop adding point to current trajectory ealier than expected !' + '\033[0m')
                     self.finalize_trajectory()
@@ -196,6 +205,14 @@ class RoCatDataCollector:
                 enable_saving = input("     Please input y or n: ")
             if enable_saving == 'y':
                 self.save_trajectories_to_file()
+                # print a point of the last trajectory
+                random_point = self.collected_data[-1]['points'][9]
+                # print in green color
+                print('\n\033[92m' + '     Random point of the last trajectory: ' + str(random_point) + '\033[0m')
+                print('         - Points: ', random_point)
+                print('         - Orientation: ', self.collected_data[-1]['orientations'][9])
+                print('         - Time: ', self.collected_data[-1]['time_stamps'][9])
+                print('         - Low freq num: ', self.collected_data[-1]['low_freq_num'])
             else:
                 rospy.logwarn("     The current trajectory is not saved !")
                 # remove the last trajectory
@@ -208,6 +225,7 @@ class RoCatDataCollector:
 
     def reset(self,):
         self.current_position = [0, 0, 0]
+        self.current_orientation = [0, 0, 0, 0]
         self.current_trajectory = []
         self.low_freq_l1_count = 0
         self.low_freq_l2_count = 0
@@ -317,34 +335,43 @@ class RoCatDataCollector:
 
         return gaps
 
-    def gap_treatment(self, new_traj_np):
+    def gap_treatment(self, new_traj):
         name = '[GAP TREATMENT] '
         segments_good = []
         segments_bad = []
 
-        gaps = self.is_gap_trajectory(new_traj_np)
+        # 1. count number of gaps
+        pos_np = np.array([pose[0] for pose in new_traj])
+        gaps = self.is_gap_trajectory(pos_np)
+
+        # 2. return if there is no gap
         if len(gaps) == 0:
             # print in green color
             print('\033[92m' + name + 'There is no gap in the trajectory' + '\033[0m')
-            if len(new_traj_np) < self.min_len_traj:
-                rospy.logerr(name + "Gap error 2 - The trajectory is too short with " + str(len(new_traj_np)) + " points !")
+            if len(new_traj) < self.min_len_traj:
+                rospy.logerr(name + "Gap error 2 - The trajectory is too short with " + str(len(new_traj)) + " points !")
                 rospy.logerr(name + "      Please recollect the trajectory !")
                 return False, None
             title = 'Trial ' + str(self.thow_time_count) + \
             ':\n     Data (' + str(len(self.collected_data)+1) + '): No gap' + \
             '\n     Raw data: ' + str(len(self.collected_data_raw)+1)
-            self.util_plotter.plot_samples_rviz([[new_traj_np, 'o']], title = title)
-            return True, [new_traj_np]
+    
+            self.util_plotter.plot_samples_rviz([[new_traj, 'o']], title = title)
+            return True, [new_traj]
         
-        # get segments_good with gaps
+        # 3. get segments_good based on gaps
         # print in yellow color
         print('\033[93m' + name + 'There are ' + str(len(gaps)) + ' gaps in the trajectory' + '\033[0m')
+
+        # ori_np = np.array([pose[1] for pose in new_trajjj])
+        # time_np = np.array([pose[2] for pose in new_trajjj])
+        # id_np = np.array([pose[3] for pose in new_trajjj])
         last_gap_point_id = 0
         count = 0
         print('----- Segments -----')
         for gap in gaps:
             gap_point_id = gap[0]
-            traj_seg = new_traj_np[last_gap_point_id : gap_point_id]
+            traj_seg = new_traj[last_gap_point_id : gap_point_id]
             # only keep the segment if it is long enough
             if gap_point_id - last_gap_point_id >= self.min_len_traj:
                 segments_good.append(traj_seg)
@@ -355,7 +382,7 @@ class RoCatDataCollector:
             print('     Segment ', count, ' : ', len(traj_seg), ' points')
             last_gap_point_id = gap_point_id
         # add the last segment
-        traj_seg = new_traj_np[last_gap_point_id:]
+        traj_seg = new_traj[last_gap_point_id:]
         if len(traj_seg) >= self.min_len_traj:
             segments_good.append(traj_seg)
         else:
@@ -364,11 +391,23 @@ class RoCatDataCollector:
         print('     Segment ', count, ' : ', len(traj_seg), ' points')
         print('There are ', len(segments_good), ' good segments and ', len(segments_bad), ' bad segments')
         
-        segments_good_plot = [[seg, 'o'] for seg in segments_good]
-        segments_bad_plot = [[seg, 'x'] for seg in segments_bad]
+        # 4. plot -> only plot position data
+        segments_good_plot = []
+        segments_bad_plot = []
+        segments_good_plot = [[seg[0], 'o'] for seg in segments_good]       # seg[0] is position seg[1] is orientation
+        segments_bad_plot = [[seg[0], 'x'] for seg in segments_bad]
 
         # merge segments_bad to segments_good into 1 list
         segments_plot = segments_good_plot + segments_bad_plot
+
+
+        print('segments_plot: ', len(segments_plot))
+        print('segments_plot[0]: ', len(segments_plot[0]))
+        print('segments_plot[0][0]: ', segments_plot[0][0].shape)
+        input()
+
+
+
 
         title = 'Trial ' + str(self.thow_time_count) + \
             ':\n     Data: ' + str(len(self.collected_data)+1) + ' - ' + str(len(segments_plot)) +' segments' + \
@@ -390,16 +429,20 @@ class RoCatDataCollector:
 
     # Process the current trajectory
     def process_data(self, new_trajectory):
-        # Interpolate vx, vy, vz from x, y, z
-        new_traj_np = np.array(new_trajectory)
-        if len(new_traj_np) > 1:
-            if self.is_missing_message_trajectory(new_traj_np[:, 4]):
+        # pos_np = np.array([pose[0] for pose in new_trajectory])
+        # ori_np = np.array([pose[1] for pose in new_trajectory])
+        # time_np = np.array([pose[2] for pose in new_trajectory])
+        # id_np = np.array([pose[3] for pose in new_trajectory])
+        traj_len = len(new_trajectory)
+        if traj_len > 1:
+            id_np = np.array([pose[3] for pose in new_trajectory])
+            if self.is_missing_message_trajectory(id_np):
                 rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
                 return False
             
             # gap treatment
             # print('new_traj_np shape: ', new_traj_np.shape[1]) # 5
-            gt_result = self.gap_treatment(new_traj_np)
+            gt_result = self.gap_treatment(new_trajectory)
             if not gt_result[0]:
                 return False
             segments = gt_result[1]
@@ -411,7 +454,7 @@ class RoCatDataCollector:
                 print('\n     A new trajectory was collected with ' + pn)
             
             # process raw data (no gap treatment)
-            new_pro_data_raw = self.process_one_trajectory(new_traj_np)
+            new_pro_data_raw = self.process_one_trajectory(new_trajectory)
             self.collected_data_raw.append(new_pro_data_raw)
             # print in green color background
             pn_raw = '\033[42m' + str(len(new_pro_data_raw['points'])) + ' points' + '\033[0m'
@@ -425,21 +468,22 @@ class RoCatDataCollector:
             return False
     
     def process_one_trajectory(self, one_trajectory):
-        traj_raw = one_trajectory[:, :3]
-        time_stamp_raw = one_trajectory[:, 3]
-        id_raw = one_trajectory[:, 4]
+        pos_np = np.array([pose[0] for pose in one_trajectory])
+        ori_np = np.array([pose[1] for pose in one_trajectory])
+        time_np = np.array([pose[2] for pose in one_trajectory])
 
-        vx = self.vel_interpolation(traj_raw[:, 0], time_stamp_raw)  # vx = dx/dt
-        vy = self.vel_interpolation(traj_raw[:, 1], time_stamp_raw)  # vy = dy/dt
-        vz = self.vel_interpolation(traj_raw[:, 2], time_stamp_raw)  # vz = dz/dt
+        vx = self.vel_interpolation(pos_np[:, 0], time_np)  # vx = dx/dt
+        vy = self.vel_interpolation(pos_np[:, 1], time_np)  # vy = dy/dt
+        vz = self.vel_interpolation(pos_np[:, 2], time_np)  # vz = dz/dt
         zeros = np.zeros_like(vx)
         gravity = np.full_like(vx, -9.81)
 
-        extened_data_points_raw = np.column_stack((traj_raw[:, :3], vx, vy, vz, zeros, gravity, zeros))
+        extened_data_points = np.column_stack((pos_np[:, :3], vx, vy, vz, zeros, gravity, zeros))
         trajectory_data = {
-            'points': extened_data_points_raw,
-            'msg_ids': id_raw,
-            'time_stamps': time_stamp_raw,
+            'points': extened_data_points,
+            'orientations': ori_np,
+            'msg_ids': id,
+            'time_stamps': time_np,
             'low_freq_num': self.low_freq_l1_count
         }
         return trajectory_data
@@ -551,7 +595,7 @@ class RoCatDataCollector:
 if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
 
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/hat_pose'  # The topic to subscribe to
+    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/bumerang1_pose'  # The topic to subscribe to
     FINAL_POINT_HEIGHT_THRESHOLD = 0.5  # The height of the final point of the trajectory to stop collecting a trajectory
 
     # Limit collection area
