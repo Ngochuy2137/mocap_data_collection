@@ -47,34 +47,36 @@ class RoCatDataReader:
     def read(self):
         return self.trajectories['trajectories']
     
+class DataCorrectionChecker:
+    def __init__(self,):
+        self.util_printer = Printer()
     '''
     check if the interpolation is correct
     Get 10 random trajectories from the trajectory and check if the velocity is correct
     '''
-    def check_data_correction(self, swap_yz=False):
+    def check_data_correction(self, data, swap_yz=False):
         # check swap_yz: If the data is swapped y and z, g should be the 8th element in one point
         # get 10 random trajectories
-
-        all_data = self.read()
         sample_size = 10
-        if len(all_data) < 10:
-            print('Checking less data ({len(all_data)}) than expected')
-            sample_size = len(all_data)
+        if len(data) < 10:
+            print('Checking less data ({len(data)}) than expected')
+            sample_size = len(data)
         
-        indices = random.sample(range(len(all_data)), sample_size)
+        indices = random.sample(range(len(data)), sample_size)
 
         count = 0
         for i in indices:
             # print a random point to check
             # print in blue background
             print('\n')
-            self.util_printer.print_blue(f'{count} ----- checking trajectory {i} with {len(all_data[i]["points"])} points -----', background=True)
+            self.util_printer.print_blue(f'{count} ----- checking trajectory {i} with {len(data[i]["points"])} points -----', background=True)
             count += 1
-            point_random_idx = random.randint(0, len(all_data[i]) - 1)
+            point_random_idx = random.randint(0, len(data[i]) - 1)
             print(f'Trajectory {i} -> point {point_random_idx}:')
-            print('     - Point:     ', all_data[i]['points'][point_random_idx])
-            print('     - Timestamp: ', all_data[i]['time_stamps'][point_random_idx])
-            result_swap_yz, msg = self.check_swap_yz_correction(all_data[i], swap_yz)
+            print('     - Point:        ', data[i]['points'][point_random_idx])
+            print('     - Orientation:  ', data[i]['orientations'][point_random_idx])
+            print('     - Timestamp:    ', data[i]['time_stamps'][point_random_idx])
+            result_swap_yz, msg = self.check_swap_yz_correction(data[i], swap_yz)
             if not result_swap_yz:
                 # print in red
                 self.util_printer.print_red(f'[SWAP YZ] Trajectory {i} has incorrect data')
@@ -83,7 +85,7 @@ class RoCatDataReader:
             # print in green
             self.util_printer.print_green(f'[SWAP YZ] Trajectory {i} has correct data')
         
-            if not self.check_velocity_correction(all_data[i]):
+            if not self.check_velocity_correction(data[i]):
                 print(f'\033[91m[VEL INTERPOLATION] Trajectory {i} has incorrect data')
                 return False
             # print in green
@@ -94,8 +96,8 @@ class RoCatDataReader:
     
     # if swap y and z, the 9th element should be -9.81
     # else, the 8th element should be -9.81
-    def check_swap_yz_correction(self, trajectory, swap_yz):
-        for point in trajectory['points']:
+    def check_swap_yz_correction(self, one_trajectory, swap_yz):
+        for point in one_trajectory['points']:
             if swap_yz:
                 value = point[8]
             else:
@@ -104,7 +106,7 @@ class RoCatDataReader:
                 msg = point
                 return False, msg
         return True, ''
-    def check_velocity_correction(self, trajectory):
+    def check_velocity_correction(self, one_trajectory):
         """
         Kiểm tra xem nội suy vận tốc có đúng không.
         The proper velocities vx, vy, vz should follow: 
@@ -112,14 +114,14 @@ class RoCatDataReader:
         - Backward difference formula for the last point
         - Central difference formula for the rest of the points
         """
-        traj_len = len(trajectory['points'])
+        traj_len = len(one_trajectory['points'])
         for i in range(traj_len):
-            point = trajectory['points'][i]
-            timestamp = trajectory['time_stamps'][i]
+            point = one_trajectory['points'][i]
+            timestamp = one_trajectory['time_stamps'][i]
             if i == 0:
                 # Forward difference
-                next_point = trajectory['points'][i + 1]
-                next_timestamp = trajectory['time_stamps'][i + 1]
+                next_point = one_trajectory['points'][i + 1]
+                next_timestamp = one_trajectory['time_stamps'][i + 1]
                 dt = next_timestamp - timestamp
 
                 vx_expected = (next_point[0] - point[0]) / dt
@@ -127,8 +129,8 @@ class RoCatDataReader:
                 vz_expected = (next_point[2] - point[2]) / dt
             elif i == traj_len - 1:
                 # Backward difference
-                prev_point = trajectory['points'][i - 1]
-                prev_timestamp = trajectory['time_stamps'][i - 1]
+                prev_point = one_trajectory['points'][i - 1]
+                prev_timestamp = one_trajectory['time_stamps'][i - 1]
                 dt = timestamp - prev_timestamp
 
                 vx_expected = (point[0] - prev_point[0]) / dt
@@ -136,10 +138,10 @@ class RoCatDataReader:
                 vz_expected = (point[2] - prev_point[2]) / dt
             else:
                 # Central difference
-                prev_point = trajectory['points'][i - 1]
-                next_point = trajectory['points'][i + 1]
-                prev_timestamp = trajectory['time_stamps'][i - 1]
-                next_timestamp = trajectory['time_stamps'][i + 1]
+                prev_point = one_trajectory['points'][i - 1]
+                next_point = one_trajectory['points'][i + 1]
+                prev_timestamp = one_trajectory['time_stamps'][i - 1]
+                next_timestamp = one_trajectory['time_stamps'][i + 1]
                 dt = next_timestamp - prev_timestamp
 
                 vx_expected = (next_point[0] - prev_point[0]) / dt
@@ -159,24 +161,24 @@ class RoCatDataReader:
                 print(f'Expected: vx = {vx_expected}, vy = {vy_expected}, vz = {vz_expected}')
                 if i == 0:
                     print('Forward difference')
-                    print('     ', trajectory['points'][i][:6])
-                    print('         ', trajectory['time_stamps'][i])
-                    print('     ', trajectory['points'][i + 1][:6])
-                    print('         ', trajectory['time_stamps'][i + 1])
+                    print('     ', one_trajectory['points'][i][:6])
+                    print('         ', one_trajectory['time_stamps'][i])
+                    print('     ', one_trajectory['points'][i + 1][:6])
+                    print('         ', one_trajectory['time_stamps'][i + 1])
                 elif i == traj_len - 1:
                     print('Backward difference')
-                    print('     ', trajectory['points'][i - 1][:6])
-                    print('         ', trajectory['time_stamps'][i - 1])
-                    print('     ', trajectory['points'][i][:6])
-                    print('         ', trajectory['time_stamps'][i])
+                    print('     ', one_trajectory['points'][i - 1][:6])
+                    print('         ', one_trajectory['time_stamps'][i - 1])
+                    print('     ', one_trajectory['points'][i][:6])
+                    print('         ', one_trajectory['time_stamps'][i])
                 else:
                     print('Central difference')
-                    print('     ', trajectory['points'][i - 1][:6])
-                    print('         ', trajectory['time_stamps'][i-1])
-                    print('     ', trajectory['points'][i][:6])
-                    print('         ', trajectory['time_stamps'][i])
-                    print('     ', trajectory['points'][i + 1][:6])
-                    print('         ', trajectory['time_stamps'][i + 1])
+                    print('     ', one_trajectory['points'][i - 1][:6])
+                    print('         ', one_trajectory['time_stamps'][i-1])
+                    print('     ', one_trajectory['points'][i][:6])
+                    print('         ', one_trajectory['time_stamps'][i])
+                    print('     ', one_trajectory['points'][i + 1][:6])
+                    print('         ', one_trajectory['time_stamps'][i + 1])
                 input()
             #print in green
             if i == 0:
@@ -193,12 +195,11 @@ if __name__ == '__main__':
     current_dir = os.path.dirname(os.path.realpath(__file__))
     parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
     # Create a path to the directory ../trajectories
-    file_path = os.path.join(parent_dir, 'data/bumerang1', '11-trajectories_09-11-2024_17-32-04.npz')
+    file_path = os.path.join(parent_dir, 'data/bumerang1/min_len_65', '15-11-2024_17-57-59-traj_num-3.npz')
 
     data_reader = RoCatDataReader(file_path)
-    # print(data_reader.trajectories.files)
-    # input()
-    # print(data_reader.trajectories['trajectories'])
+    data_collection_checker = DataCorrectionChecker()
+    data_collection_checker.check_data_correction(data_reader.read())
 
     one_trajectory = data_reader.read()[1]
     print('check 111: ', one_trajectory['points'].shape)
