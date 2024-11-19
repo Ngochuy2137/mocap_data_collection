@@ -68,6 +68,7 @@ class RoCatDataCollector:
         self.util_plotter = Plotter()
 
         self.mocap_object_topic = mocap_object_topic
+        self.object_name = self.mocap_object_topic.split('/')[-1][:-5] # ignore _pose in the topic name
         self.final_point_height_threshold = final_point_height_threshold
 
         # Collecting area
@@ -515,7 +516,6 @@ class RoCatDataCollector:
 
     def save_trajectories_to_file(self,):
         # get object name from rostopic
-        object_name = self.mocap_object_topic.split('/')[-1][:-5] # ignore _pose in the topic name
         # Get the path of the current directory (where the script is running)
         current_dir = os.path.dirname(os.path.realpath(__file__))
         # Move one directory up
@@ -523,7 +523,7 @@ class RoCatDataCollector:
 
         # --- 1. Save gap treated data ---
         # Create a path to the directory ../trajectories
-        trajectories_dir = os.path.join(parent_dir, 'data', object_name, 'min_len_'+str(self.min_len_traj))
+        trajectories_dir = os.path.join(parent_dir, 'data', self.object_name, 'min_len_'+str(self.min_len_traj))
         # Create directory ../trajectories if it does not exist
         if not os.path.exists(trajectories_dir):
             os.makedirs(trajectories_dir)
@@ -540,14 +540,15 @@ class RoCatDataCollector:
         # Save trajectories using numpy npz format
         file_name = str(self.start_time) + '-traj_num-' + str(len(self.collected_data)) + '.npz'
         file_path = os.path.join(trajectories_dir, file_name)
-        data_dict = {'trajectories': self.collected_data}
+        data_dict = {'trajectories': self.collected_data,
+                    'object_name': self.mocap_object_topic}
         np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
         log_print = "[DATA] A new trajectory has been added and saved to file " + file_path
         # print in green color
         print("\033[92m" + log_print + "\033[0m")
 
         # --- 2. Save raw data (no gap treatment) ---
-        trajectories_raw_dir = os.path.join(parent_dir, 'data-no-gap-treatment', object_name, 'min_len_'+str(self.min_len_traj))
+        trajectories_raw_dir = os.path.join(parent_dir, 'data-no-gap-treatment', self.object_name, 'min_len_'+str(self.min_len_traj))
         if not os.path.exists(trajectories_raw_dir):
             os.makedirs(trajectories_raw_dir)
         old_files = glob.glob(os.path.join(trajectories_raw_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))

@@ -69,6 +69,8 @@ class RoCatDataCollector:
         self.util_plotter = Plotter()
 
         self.mocap_object_topic = mocap_object_topic
+        # get object name from rostopic
+        self.object_name = self.mocap_object_topic.split('/')[-1][:-5] # ignore _pose in the topic name
         self.swap_yz = swap_yz
         self.final_point_height_threshold = final_point_height_threshold
 
@@ -453,14 +455,12 @@ class RoCatDataCollector:
         return vel
 
     def save_trajectories_to_file(self,):
-        # get object name from rostopic
-        object_name = self.mocap_object_topic.split('/')[-1][:-5] # ignore _pose in the topic name
         # Get the path of the current directory (where the script is running)
         current_dir = os.path.dirname(os.path.realpath(__file__))
         # Move one directory up
         parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
         # Create a path to the directory ../trajectories
-        trajectories_dir = os.path.join(parent_dir, 'data', object_name)
+        trajectories_dir = os.path.join(parent_dir, 'data', self.object_name)
         # Create directory ../trajectories if it does not exist
         if not os.path.exists(trajectories_dir):
             os.makedirs(trajectories_dir)
@@ -477,7 +477,8 @@ class RoCatDataCollector:
         # Save trajectories using numpy npz format
         file_name = str(len(self.collected_data)) + '-trajectories_' + str(self.start_time) + '.npz'
         file_path = os.path.join(trajectories_dir, file_name)
-        data_dict = {'trajectories': self.collected_data}
+        data_dict = {'trajectories': self.collected_data,
+                    'object_name': self.object_name}
         np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
         log_print = "A new trajectory has been added and saved to file " + file_path
         # print in green color
