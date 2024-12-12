@@ -162,7 +162,7 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/data_collector_node_swap.py
   scripts/data_collector_node_no_swap.py
-  scripts/check_frq.py
+  scripts/check_frq_new.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
