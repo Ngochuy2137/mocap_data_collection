@@ -60,11 +60,12 @@ class RoCatDataCollector:
             low_freq_l2_threshold,
             low_freq_l2_num_threshold,
             gap_recog_threshold,
-            min_len_traj):
+            min_len_traj, 
+            missing_message_check):
         
         self.decima_prt_num = 5
         self.start_time = time.strftime("%d-%m-%Y_%H-%M-%S")     # get time now: d/m/y/h/m
-        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=200)
+        self.number_subscriber = rospy.Subscriber(mocap_object_topic, PoseStamped, self.pose_callback, queue_size=1)
         self.util_plotter = Plotter()
 
         self.mocap_object_topic = mocap_object_topic
@@ -84,6 +85,7 @@ class RoCatDataCollector:
         # Gap treatments
         self.gap_recog_threshold = gap_recog_threshold
         self.min_len_traj = min_len_traj
+        self.missing_message_check = missing_message_check
 
 
         self.collected_data = []
@@ -139,13 +141,14 @@ class RoCatDataCollector:
                                 self.current_position[2] > self.collection_area_z[0] and self.current_position[2] < self.collection_area_z[1])
             if enable_recording:    
                 # check if messages are missing
-                if self.is_message_missing_signal(current_msg_id):
-                    # end program
-                    rospy.logerr("Reject the current trajectory ! Please recollect the trajectory !")
-                    self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
-                    self.reset()
-                    # rospy.signal_shutdown("Node shutting down")
-                    return
+                if self.missing_message_check==True:
+                    if self.is_message_missing_signal(current_msg_id):
+                        # end program
+                        rospy.logerr("Reject the current trajectory ! Please recollect the trajectory !")
+                        self.enable_enter_check_event.set()  # Kích hoạt thread để kiểm tra ENTER
+                        self.reset()
+                        # rospy.signal_shutdown("Node shutting down")
+                        return
         
                 # check if messages frequency is too low
                 low_freq_level, freq = self.is_message_low_frequency_signal(current_timestamp, self.current_position)
@@ -199,7 +202,7 @@ class RoCatDataCollector:
             self.recording_lock.release()
 
     def finalize_trajectory(self,):
-        if self.process_data(self.current_trajectory):
+        if self.process_data(self.current_trajectory, missing_message_check=self.missing_message_check):
             # Save all trajectories to file after each new proper trajectory
             enable_saving = input("     Do you want to save the current trajectory ? (y/n): ")
             while enable_saving not in ['y', 'n']:
@@ -357,6 +360,8 @@ class RoCatDataCollector:
             ':\n     Data (' + str(len(self.collected_data)+1) + '): No gap' + \
             '\n     Raw data: ' + str(len(self.collected_data_raw)+1)
     
+            print(' type new_traj: ', type(new_traj))
+            input()
             self.util_plotter.plot_samples_rviz([[new_traj, 'o']], title = title)
             return True, [new_traj]
         
@@ -429,7 +434,7 @@ class RoCatDataCollector:
             rospy.logwarn("     Callback freq is low: " + str(round(callback_freq, 2)) + " Hz")
 
     # Process the current trajectory
-    def process_data(self, new_trajectory):
+    def process_data(self, new_trajectory, missing_message_check=True):
         # pos_np = np.array([pose[0] for pose in new_trajectory])
         # ori_np = np.array([pose[1] for pose in new_trajectory])
         # time_np = np.array([pose[2] for pose in new_trajectory])
@@ -437,9 +442,10 @@ class RoCatDataCollector:
         traj_len = len(new_trajectory)
         if traj_len > 1:
             id_np = np.array([pose[3] for pose in new_trajectory])
-            if self.is_missing_message_trajectory(id_np):
-                rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
-                return False
+            if missing_message_check:
+                if self.is_missing_message_trajectory(id_np):
+                    rospy.logerr("The data is not continuous, some messages from publisher might be missed\nplease recollect the trajectory !")
+                    return False
             
             # gap treatment
             # print('new_traj_np shape: ', new_traj_np.shape[1]) # 5
@@ -596,14 +602,14 @@ class RoCatDataCollector:
 if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
 
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/bumerang1_pose'  # The topic to subscribe to
-    FINAL_POINT_HEIGHT_THRESHOLD = 0.5  # The height of the final point of the trajectory to stop collecting a trajectory
-
+    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee_ring_pose'  # The topic to subscribe to
+    FINAL_POINT_HEIGHT_THRESHOLD = 0.4  # The height of the final point of the trajectory to stop collecting a trajectory
+    MISSING_MESSAGE_CHECK = False
     # Limit collection area
     collection_area = {
         'collection_area_x': [-1.5, 4],
         'collection_area_y': [0.0, 1000],
-        'collection_area_z': [-1.5, 2.5]
+        'collection_area_z': [-2.0, 4.0]
     }
     
     # Low frequency treatment: Variables for checking message frequency
@@ -625,7 +631,8 @@ if __name__ == '__main__':
         FINAL_POINT_HEIGHT_THRESHOLD, 
         **collection_area,
         **low_freq_treatment_params,
-        **gap_treatment_params
+        **gap_treatment_params,
+        missing_message_check=MISSING_MESSAGE_CHECK
     )
     try:
         rospy.spin()

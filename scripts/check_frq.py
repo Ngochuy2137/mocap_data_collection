@@ -8,7 +8,7 @@ class MessageFrequencyChecker:
         self.message_count = 0
         self.last_msg_time = 0
         self.last_id = 0
-        rospy.Subscriber('/vrpn_client_node/frisbee1/pose', PoseStamped, self.callback, queue_size=1)
+        rospy.Subscriber('/mocap_pose_topic/frisbee_ring_pose', PoseStamped, self.callback, queue_size=1)
 
     def callback(self, msg:UInt8):
         current_time = msg.header.stamp.to_sec()
