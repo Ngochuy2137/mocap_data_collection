@@ -362,7 +362,7 @@ class RoCatDataCollector:
     
             print(' type new_traj: ', type(new_traj))
             input()
-            self.util_plotter.plot_samples_rviz([[new_traj, 'o']], title = title)
+            # self.util_plotter.plot_samples_rviz([[new_traj, 'o']], title = title)
             return True, [new_traj]
         
         # 3. get segments_good based on gaps
@@ -407,10 +407,10 @@ class RoCatDataCollector:
         segments_plot = segments_good_plot + segments_bad_plot
 
 
-        print('segments_plot: ', len(segments_plot))
-        print('segments_plot[0]: ', len(segments_plot[0]))
-        print('segments_plot[0][0]: ', segments_plot[0][0].shape)
-        input()
+        # print('segments_plot: ', len(segments_plot))
+        # print('segments_plot[0]: ', len(segments_plot[0]))
+        # print('segments_plot[0][0]: ', segments_plot[0][0].shape)
+        # input()
 
 
 
@@ -418,7 +418,7 @@ class RoCatDataCollector:
         title = 'Trial ' + str(self.thow_time_count) + \
             ':\n     Data: ' + str(len(self.collected_data)+1) + ' - ' + str(len(segments_plot)) +' segments' + \
             '\n     Raw data: ' + str(len(self.collected_data_raw)+1)
-        self.util_plotter.plot_samples_rviz(segments_plot, title = title)
+        # self.util_plotter.plot_samples_rviz(segments_plot, title = title)
         if len(segments_good) == 0:
             rospy.logerr(name + "Gap error 1 - No segment is long enough !")
             rospy.logerr(name + "      Please recollect the trajectory !")
@@ -534,36 +534,36 @@ class RoCatDataCollector:
         if not os.path.exists(trajectories_dir):
             os.makedirs(trajectories_dir)
 
-        # Delete old files containing 'trajectories_' in their name
-        old_files = glob.glob(os.path.join(trajectories_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))
-        for old_file in old_files:
-            try:
-                os.remove(old_file)
-                rospy.loginfo(f"Deleted old file: {old_file}")
-            except OSError as e:
-                rospy.logwarn(f"Error deleting file {old_file}: {e}")
+        # # Delete old files containing 'trajectories_' in their name
+        # old_files = glob.glob(os.path.join(trajectories_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))
+        # for old_file in old_files:
+        #     try:
+        #         os.remove(old_file)
+        #         rospy.loginfo(f"Deleted old file: {old_file}")
+        #     except OSError as e:
+        #         rospy.logwarn(f"Error deleting file {old_file}: {e}")
         
         # Save trajectories using numpy npz format
         file_name = str(self.start_time) + '-traj_num-' + str(len(self.collected_data)) + '.npz'
         file_path = os.path.join(trajectories_dir, file_name)
         data_dict = {'trajectories': self.collected_data,
                     'object_name': self.mocap_object_topic}
-        np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
-        log_print = "[DATA] A new trajectory has been added and saved to file " + file_path
+        # np.savez(file_path, **data_dict)  # Save each trajectory as a key-value array
+        # log_print = "[DATA] A new trajectory has been added and saved to file " + file_path
         # print in green color
-        print("\033[92m" + log_print + "\033[0m")
+        # print("\033[92m" + log_print + "\033[0m")
 
         # --- 2. Save raw data (no gap treatment) ---
         trajectories_raw_dir = os.path.join(parent_dir, 'data-no-gap-treatment', self.object_name, 'min_len_'+str(self.min_len_traj))
         if not os.path.exists(trajectories_raw_dir):
             os.makedirs(trajectories_raw_dir)
-        old_files = glob.glob(os.path.join(trajectories_raw_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))
-        for old_file in old_files:
-            try:
-                os.remove(old_file)
-                rospy.loginfo(f"Deleted old file: {old_file}")
-            except OSError as e:
-                rospy.logwarn(f"Error deleting file {old_file}: {e}")
+        # old_files = glob.glob(os.path.join(trajectories_raw_dir, '*' + str(self.start_time) + '-traj_num-' + '*'))
+        # for old_file in old_files:
+        #     try:
+        #         os.remove(old_file)
+        #         rospy.loginfo(f"Deleted old file: {old_file}")
+        #     except OSError as e:
+        #         rospy.logwarn(f"Error deleting file {old_file}: {e}")
         # Save trajectories using numpy npz format
         file_name = str(self.start_time) + '-traj_num-' + str(len(self.collected_data_raw)) + '.npz'
         file_path = os.path.join(trajectories_raw_dir, file_name)
@@ -582,8 +582,8 @@ class RoCatDataCollector:
                     # print with blue background
                     time_collection = round((time.time() - self.time_start) / 60, 5)
                     print('\n\n' + '\033[44m' + '--------------------------------------------------------------------------------------------------------------' + '\033[0m')
-                    log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " -----------------------   Number of collected trajectories: [" + str(len(self.collected_data)) + "]   -----------------------"
-                    print("033[44m" + log_print + "\033[0m")
+                    # log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " -----------------------   Number of collected trajectories: [" + str(len(self.collected_data)) + "]   -----------------------"
+                    # print("033[44m" + log_print + "\033[0m")
                     log_print = str(self.thow_time_count) + ' - ' + str(time_collection) + ' mins' + " ----------------------- Number of collected raw trajectories: [" + str(len(self.collected_data_raw)) + "] -----------------------"
                     print("033[44m" + log_print + "\033[0m")
                     print('                                         Press ENTER to start new trajectory collection')
@@ -601,13 +601,13 @@ class RoCatDataCollector:
 
 if __name__ == '__main__':
     rospy.init_node('data_collector', anonymous=True)
-
-    MOCAP_OBJECT_TOPIC = '/mocap_pose_topic/frisbee_ring_pose'  # The topic to subscribe to
+    OBJECT_NAME = 'chocochips'
     FINAL_POINT_HEIGHT_THRESHOLD = 0.4  # The height of the final point of the trajectory to stop collecting a trajectory
     MISSING_MESSAGE_CHECK = False
+    mocap_object_topic = f'/mocap_pose_topic/{OBJECT_NAME}_pose'  # The topic to subscribe to
     # Limit collection area
     collection_area = {
-        'collection_area_x': [-1.5, 4],
+        'collection_area_x': [-1, 4],
         'collection_area_y': [0.0, 1000],
         'collection_area_z': [-2.0, 4.0]
     }
@@ -621,13 +621,13 @@ if __name__ == '__main__':
 
     # Gap treatments
     gap_treatment_params = {
-        'gap_recog_threshold': 0.08,
-        'min_len_traj': 65
+        'gap_recog_threshold': 0.2,
+        'min_len_traj': 50
     }
 
 
     collector = RoCatDataCollector(
-        MOCAP_OBJECT_TOPIC, 
+        mocap_object_topic, 
         FINAL_POINT_HEIGHT_THRESHOLD, 
         **collection_area,
         **low_freq_treatment_params,
